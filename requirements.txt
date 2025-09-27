@@ -14,7 +14,7 @@ python-dotenv==1.0.1
 schedule==1.2.1
 requests==2.31.0
 beautifulsoup4==4.12.3
-lxml==5.2.1
+lxml==4.9.3
 PyInstaller==6.5.0
 cx-Freeze==6.15.15
 # Additional dependencies for enhanced features
