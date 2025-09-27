@@ -1,0 +1,85 @@
+services:
+  # Redis service for caching and data storage
+  redis:
+    image: redis:7-alpine
+    container_name: stock_analyzer_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Stock Market Analyzer Application
+  app:
+    build: .
+    container_name: stock_analyzer_app
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      # Redis Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+
+      # App Configuration
+      - APP_MODE=redis
+      - YAHOO_FINANCE_ENABLED=true
+      - UPDATE_INTERVAL_MINUTES=5
+
+      # Streamlit Configuration
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+      # Google Sheets Configuration (optional)
+      - GOOGLE_CREDENTIALS_FILE=/app/credentials/google_credentials.json
+      - GOOGLE_SHEET_ID=
+    volumes:
+      # Persistent data storage
+      - app_data:/app/data
+
+      # Google credentials (optional, mount if using Google Sheets)
+      # Use absolute paths for Windows compatibility
+      - type: bind
+        source: ./credentials
+        target: /app/credentials
+        read_only: true
+        bind:
+          create_host_path: true
+
+      # Configuration persistence
+      - type: bind
+        source: ./config.json
+        target: /app/config.json
+        bind:
+          create_host_path: true
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 30s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  # Redis data persistence
+  redis_data:
+    driver: local
+
+  # Application data persistence
+  app_data:
+    driver: local
+
+networks:
+  default:
+    name: stock_analyzer_network

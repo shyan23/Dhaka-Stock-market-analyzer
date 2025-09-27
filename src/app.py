@@ -54,9 +54,17 @@ class StockMarketApp:
                 # Store installer config in session state
                 st.session_state.installer_config = installer_config
 
-                # Set storage type based on installer choice
-                storage_type = installer_config.get("storage_type", "local_database")
+                # Try to get storage preference from Redis first (for persistence)
+                storage_type = self._get_storage_preference_from_redis()
+
+                # Fall back to config file if Redis preference not found
+                if not storage_type:
+                    storage_type = installer_config.get("storage_type", "redis")
+
                 st.session_state.storage_type = storage_type
+
+                # Update environment for current session
+                os.environ['APP_MODE'] = storage_type
 
                 # Mark as first run if needed
                 if installer_config.get("first_run", True):
@@ -64,7 +72,33 @@ class StockMarketApp:
 
             except Exception as e:
                 st.error(f"Error loading installer config: {e}")
-                st.session_state.storage_type = "local_database"
+                st.session_state.storage_type = "redis"
+
+    def _get_storage_preference_from_redis(self):
+        """Get storage preference from Redis if available"""
+        try:
+            import redis
+            from config import Config
+
+            # Use a temporary config to connect to Redis
+            temp_config = Config()
+            redis_client = redis.Redis(
+                host=temp_config.REDIS_HOST,
+                port=temp_config.REDIS_PORT,
+                password=temp_config.REDIS_PASSWORD if temp_config.REDIS_PASSWORD else None,
+                decode_responses=True
+            )
+
+            preference_data = redis_client.get("app:storage_preference")
+            if preference_data:
+                data = json.loads(preference_data)
+                return data.get('storage_type')
+
+        except Exception as e:
+            # Silently fail - Redis might not be available yet
+            pass
+
+        return None
     
     def _initialize_session_state(self):
         """Initialize Streamlit session state variables with persistent data"""
@@ -196,6 +230,10 @@ class StockMarketApp:
 
         with tab4:
             self._render_data_management()
+
+        # Storage Switching section
+        st.markdown("---")
+        self._render_storage_switching()
 
         # About section
         with st.expander("ℹ️ About Stock Market Analyzer"):
@@ -563,6 +601,142 @@ class StockMarketApp:
                     )
                 else:
                     st.info("No data available for export.")
+
+    def _render_storage_switching(self):
+        """Render storage switching interface"""
+        st.subheader("🔄 Storage Backend Switching")
+
+        from src.services.storage_migrator import StorageMigrator
+        migrator = StorageMigrator(self.data_manager)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write("**Current Storage Backend:**")
+            current_mode = self.config.APP_MODE
+            mode_display = "📈 Google Sheets" if current_mode == "google_sheets" else "🗄️ Redis Database"
+            st.info(f"{mode_display}")
+
+            # Show storage statistics
+            if current_mode == "redis":
+                st.write("**Redis Status:**")
+                if self.data_manager.redis_client:
+                    try:
+                        info = self.data_manager.redis_client.info()
+                        st.write(f"• Connected to: {self.config.REDIS_HOST}:{self.config.REDIS_PORT}")
+                        st.write(f"• Memory used: {info.get('used_memory_human', 'Unknown')}")
+                        st.write(f"• Keys count: {info.get('db0', {}).get('keys', 0) if 'db0' in info else 0}")
+                    except:
+                        st.error("Redis connection failed")
+                else:
+                    st.error("Redis not connected")
+
+            elif current_mode == "google_sheets":
+                st.write("**Google Sheets Status:**")
+                if self.data_manager.sheets_service and self.data_manager.sheets_service.is_connected():
+                    st.success("✅ Connected to Google Sheets")
+                    st.write(f"• Sheet ID: {self.config.GOOGLE_SHEET_ID[:20]}...")
+                else:
+                    st.error("❌ Google Sheets not connected")
+
+        with col2:
+            st.write("**Switch Storage Backend:**")
+
+            # Storage type selection
+            target_storage = st.selectbox(
+                "Select Target Storage:",
+                ["redis", "google_sheets"],
+                index=0 if current_mode == "google_sheets" else 1,
+                format_func=lambda x: "🗄️ Redis Database" if x == "redis" else "📈 Google Sheets"
+            )
+
+            if target_storage != current_mode:
+                st.write(f"**Switching from {current_mode} to {target_storage}**")
+
+                # Configuration for Google Sheets
+                config_data = {}
+                if target_storage == "google_sheets":
+                    st.write("**Google Sheets Configuration:**")
+
+                    credentials_file = st.text_input(
+                        "Google Credentials File Path:",
+                        value="/app/credentials/google_credentials.json",
+                        help="Path to your Google service account JSON file"
+                    )
+
+                    sheet_id = st.text_input(
+                        "Google Sheet ID:",
+                        value=self.config.GOOGLE_SHEET_ID,
+                        help="The ID of your Google Sheets document"
+                    )
+
+                    config_data = {
+                        'google_credentials_file': credentials_file,
+                        'google_sheet_id': sheet_id
+                    }
+
+                    # Test connection button
+                    if st.button("🧪 Test Google Sheets Connection"):
+                        with st.spinner("Testing Google Sheets connection..."):
+                            success = migrator.test_storage_connection(target_storage, config_data)
+                            if success:
+                                st.success("✅ Google Sheets connection successful!")
+                            else:
+                                st.error("❌ Google Sheets connection failed. Please check your credentials and sheet ID.")
+
+                elif target_storage == "redis":
+                    st.write("**Redis Configuration:**")
+                    st.info("Redis will use the existing Docker container configuration.")
+
+                    # Test Redis connection
+                    if st.button("🧪 Test Redis Connection"):
+                        with st.spinner("Testing Redis connection..."):
+                            success = migrator.test_storage_connection(target_storage)
+                            if success:
+                                st.success("✅ Redis connection successful!")
+                            else:
+                                st.error("❌ Redis connection failed. Please ensure Redis container is running.")
+
+                # Migration button
+                st.markdown("---")
+                if st.button(f"🔄 Migrate to {target_storage.title()}", type="primary"):
+                    if target_storage == "google_sheets" and (not config_data.get('google_credentials_file') or not config_data.get('google_sheet_id')):
+                        st.error("Please provide both credentials file path and sheet ID for Google Sheets migration.")
+                    else:
+                        with st.spinner(f"Migrating data to {target_storage}..."):
+                            success = migrator.migrate_storage(current_mode, target_storage, config_data)
+                            if success:
+                                st.balloons()
+                                st.success(f"🎉 Successfully migrated to {target_storage}!")
+                                st.info("The page will reload to reflect the new storage backend.")
+                                # Trigger a rerun to reload with new configuration
+                                st.rerun()
+                            else:
+                                st.error("Migration failed. Your data remains on the original storage backend.")
+            else:
+                st.info("Select a different storage backend to enable migration.")
+
+        # Migration warnings
+        st.markdown("---")
+        with st.expander("⚠️ Important Migration Notes"):
+            st.warning("""
+            **Before migrating, please note:**
+
+            1. **Backup Recommended**: A backup is automatically created, but consider downloading a manual backup from the Data Management section.
+
+            2. **Google Sheets Setup**: For Google Sheets migration, ensure:
+               - Your service account JSON file is properly mounted in the Docker container
+               - The target Google Sheet exists and is accessible by your service account
+               - The service account has edit permissions on the sheet
+
+            3. **Redis Migration**: For Redis migration:
+               - Ensure the Redis container is running and accessible
+               - Data will be stored in the Redis container's persistent volume
+
+            4. **Session Persistence**: Your storage preference is saved in Redis and will persist across container restarts.
+
+            5. **Rollback**: If migration fails, your data remains in the original storage backend.
+            """)
 
     def _render_data_management(self):
         """Render data management interface"""
