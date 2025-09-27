@@ -3,15 +3,17 @@ import redis
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 import pandas as pd
+import streamlit as st
 from config import Config
 from src.models.stock import Stock, StockPriceHistory
 from src.models.portfolio import Transaction, PortfolioItem, PortfolioSnapshot
 
 class DataManager:
-    def __init__(self):
+    def __init__(self, session_manager=None):
         self.config = Config()
         self.app_mode = self.config.APP_MODE
-        
+        self.session_manager = session_manager
+
         if self.app_mode == 'redis':
             self._init_redis()
         else:
@@ -28,10 +30,16 @@ class DataManager:
             )
             # Test connection
             self.redis_client.ping()
-            print("Redis connection established")
+            print("✅ Redis connection established")
         except Exception as e:
-            print(f"Redis connection failed: {e}")
+            print(f"❌ Redis connection failed: {e}")
             self.redis_client = None
+
+    def _get_user_prefix(self) -> str:
+        """Get user prefix for Redis keys"""
+        if self.session_manager:
+            return self.session_manager.get_user_prefix()
+        return "global_"
     
     def _init_google_sheets(self):
         """Initialize Google Sheets connection"""
@@ -284,3 +292,191 @@ class DataManager:
         if not self.sheets_service:
             return []
         return self.sheets_service.get_portfolio_history(days)
+
+    # User-specific Redis methods for session state data
+    def save_user_portfolio_items(self, portfolio_items: Dict[str, PortfolioItem]) -> bool:
+        """Save user's portfolio items to Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return False
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}portfolio_items"
+
+            # Convert portfolio items to serializable format
+            data = {symbol: item.to_dict() for symbol, item in portfolio_items.items()}
+            return self.redis_client.set(key, json.dumps(data))
+        except Exception as e:
+            print(f"Error saving portfolio items: {e}")
+            return False
+
+    def load_user_portfolio_items(self) -> Dict[str, PortfolioItem]:
+        """Load user's portfolio items from Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return {}
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}portfolio_items"
+
+            data = self.redis_client.get(key)
+            if data:
+                items_data = json.loads(data)
+                return {symbol: PortfolioItem.from_dict(item_data)
+                       for symbol, item_data in items_data.items()}
+            return {}
+        except Exception as e:
+            print(f"Error loading portfolio items: {e}")
+            return {}
+
+    def save_user_transactions(self, transactions: List[Transaction]) -> bool:
+        """Save user's transactions to Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return False
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}transactions"
+
+            # Convert transactions to serializable format
+            data = [transaction.to_dict() for transaction in transactions]
+            return self.redis_client.set(key, json.dumps(data))
+        except Exception as e:
+            print(f"Error saving transactions: {e}")
+            return False
+
+    def load_user_transactions(self) -> List[Transaction]:
+        """Load user's transactions from Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return []
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}transactions"
+
+            data = self.redis_client.get(key)
+            if data:
+                transactions_data = json.loads(data)
+                return [Transaction.from_dict(tx_data) for tx_data in transactions_data]
+            return []
+        except Exception as e:
+            print(f"Error loading transactions: {e}")
+            return []
+
+    def save_user_selected_stocks(self, selected_stocks: List[str]) -> bool:
+        """Save user's selected stocks to Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return False
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}selected_stocks"
+            return self.redis_client.set(key, json.dumps(selected_stocks))
+        except Exception as e:
+            print(f"Error saving selected stocks: {e}")
+            return False
+
+    def load_user_selected_stocks(self) -> List[str]:
+        """Load user's selected stocks from Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return []
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}selected_stocks"
+
+            data = self.redis_client.get(key)
+            if data:
+                return json.loads(data)
+            return []
+        except Exception as e:
+            print(f"Error loading selected stocks: {e}")
+            return []
+
+    def save_user_cash_balance(self, cash_balance: float) -> bool:
+        """Save user's cash balance to Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return False
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}cash_balance"
+            return self.redis_client.set(key, str(cash_balance))
+        except Exception as e:
+            print(f"Error saving cash balance: {e}")
+            return False
+
+    def load_user_cash_balance(self) -> float:
+        """Load user's cash balance from Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return 100000.0  # Default balance
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}cash_balance"
+
+            data = self.redis_client.get(key)
+            if data:
+                return float(data)
+            return 100000.0  # Default balance
+        except Exception as e:
+            print(f"Error loading cash balance: {e}")
+            return 100000.0
+
+    def save_user_portfolio_settings(self, settings: Dict[str, Any]) -> bool:
+        """Save user's portfolio settings to Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return False
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}portfolio_settings"
+            return self.redis_client.set(key, json.dumps(settings))
+        except Exception as e:
+            print(f"Error saving portfolio settings: {e}")
+            return False
+
+    def load_user_portfolio_settings(self) -> Dict[str, Any]:
+        """Load user's portfolio settings from Redis"""
+        if self.app_mode != 'redis' or not self.redis_client:
+            return {'initial_fund': 100000.0}
+
+        try:
+            user_prefix = self._get_user_prefix()
+            key = f"{user_prefix}portfolio_settings"
+
+            data = self.redis_client.get(key)
+            if data:
+                return json.loads(data)
+            return {'initial_fund': 100000.0}
+        except Exception as e:
+            print(f"Error loading portfolio settings: {e}")
+            return {'initial_fund': 100000.0}
+
+    def test_redis_connection(self) -> Dict[str, Any]:
+        """Test Redis connection and return status"""
+        if self.app_mode != 'redis':
+            return {'connected': False, 'error': 'Not in Redis mode'}
+
+        try:
+            if self.redis_client:
+                # Test basic operations
+                test_key = "test_connection"
+                test_value = "Redis is working!"
+
+                self.redis_client.set(test_key, test_value, ex=10)  # Expire in 10 seconds
+                result = self.redis_client.get(test_key)
+
+                return {
+                    'connected': True,
+                    'test_result': result,
+                    'config': {
+                        'host': self.config.REDIS_HOST,
+                        'port': self.config.REDIS_PORT,
+                        'password_set': bool(self.config.REDIS_PASSWORD)
+                    }
+                }
+            else:
+                return {'connected': False, 'error': 'Redis client not initialized'}
+        except Exception as e:
+            return {'connected': False, 'error': str(e)}

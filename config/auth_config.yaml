@@ -1,0 +1,25 @@
+cookie:
+  expiry_days: 30
+  key: stock_market_analyzer_key_2024
+  name: stock_market_analyzer_cookie
+credentials:
+  usernames:
+    admin:
+      email: admin@example.com
+      name: Administrator
+      password: $2b$12$9DHrbrGUaBkzg8Jy9GqfounbqHmDspPaLE93xKmtws7rGs2RMUu2G
+    demo_user:
+      email: demo@example.com
+      name: Demo User
+      password: $2b$12$ji./mS09NGyJaCuKbZ8Bp.U9aX4XXK2fqIrAhNEvN0gadO9SnMWc.
+    jane_smith:
+      email: jane@example.com
+      name: Jane Smith
+      password: $2b$12$Tt2cDUps4RBgcEbJrBwdAuxFmrLNZ/NHMXqNuBdv4zZdTxCZTrUoC
+    john_doe:
+      email: john@example.com
+      name: John Doe
+      password: $2b$12$cgP.b7pHUiJpBCg8SwOboOwgLJx4ZheUa0fnPJK9i17.akDs61shi
+preauthorized:
+  emails:
+  - admin@example.com

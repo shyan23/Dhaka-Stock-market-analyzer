@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+import streamlit as st
 
 class Config:
     def __init__(self):
@@ -10,10 +11,39 @@ class Config:
         self.GOOGLE_CREDENTIALS_FILE = os.getenv('GOOGLE_CREDENTIALS_FILE', '')
         self.GOOGLE_SHEET_ID = os.getenv('GOOGLE_SHEET_ID', '')
 
-        # Redis Configuration
-        self.REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-        self.REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-        self.REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
+        # Redis Configuration - Support Streamlit Secrets
+        self._setup_redis_config()
+
+    def _setup_redis_config(self):
+        """Setup Redis configuration from Streamlit secrets or environment variables"""
+        try:
+            # Try Streamlit secrets first (for cloud deployment)
+            if hasattr(st, 'secrets') and "redis" in st.secrets:
+                redis_config = st.secrets["redis"]
+
+                # Handle both connection URL and individual parameters
+                if "url" in redis_config:
+                    # Parse Redis URL format: redis://:password@host:port
+                    import urllib.parse
+                    parsed = urllib.parse.urlparse(redis_config["url"])
+                    self.REDIS_HOST = parsed.hostname or 'localhost'
+                    self.REDIS_PORT = parsed.port or 6379
+                    self.REDIS_PASSWORD = parsed.password or ''
+                else:
+                    # Individual parameters
+                    self.REDIS_HOST = redis_config.get("host", "localhost")
+                    self.REDIS_PORT = int(redis_config.get("port", 6379))
+                    self.REDIS_PASSWORD = redis_config.get("password", "")
+            else:
+                # Fallback to environment variables
+                self.REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+                self.REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+                self.REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
+        except Exception as e:
+            # Fallback to environment variables if secrets fail
+            self.REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+            self.REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+            self.REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
 
         # Stock Data Configuration
         self.YAHOO_FINANCE_ENABLED = os.getenv('YAHOO_FINANCE_ENABLED', 'true').lower() == 'true'

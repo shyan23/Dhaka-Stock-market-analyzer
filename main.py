@@ -10,7 +10,7 @@ from config import Config
 
 def main():
     st.set_page_config(
-        page_title="Stock Market Analyzer",
+        page_title="Stock Market Analyzer - Multi-User",
         page_icon="📈",
         layout="wide",
         initial_sidebar_state="expanded"
