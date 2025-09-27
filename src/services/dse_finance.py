@@ -57,35 +57,56 @@ class DSEFinanceService:
             return stocks
 
         lines = data.strip().split('\n')
-        for line in lines[1:]:  # Skip header
+        # Skip the header lines and look for actual data
+        for line in lines[3:]:  # Skip the first 3 header lines
             if not line.strip():
                 continue
 
-            parts = line.split('\t')
-            if len(parts) >= 10:
-                try:
-                    symbol = parts[0].strip()
-                    stocks[symbol] = {
-                        'symbol': symbol,
-                        'ltp': float(parts[1]) if parts[1] else 0.0,
-                        'high': float(parts[2]) if parts[2] else 0.0,
-                        'low': float(parts[3]) if parts[3] else 0.0,
-                        'close_p': float(parts[4]) if parts[4] else 0.0,
-                        'ycp': float(parts[5]) if parts[5] else 0.0,
-                        'change': float(parts[6]) if parts[6] else 0.0,
-                        'trade': int(parts[7]) if parts[7] else 0,
-                        'value_mn': float(parts[8]) if parts[8] else 0.0,
-                        'volume': int(parts[9]) if parts[9] else 0
-                    }
-                except (ValueError, IndexError):
-                    continue
+            # Parse tab-separated format: Symbol \t Price
+            if '\t' in line:
+                parts = line.split('\t')
+                if len(parts) >= 2:
+                    try:
+                        symbol = parts[0].strip()
+                        price_str = parts[1].strip()
+
+                        if symbol and price_str:
+                            price = float(price_str)
+                            stocks[symbol] = {
+                                'symbol': symbol,
+                                'ltp': price,
+                                'high': price,  # Use current price as placeholder
+                                'low': price,   # Use current price as placeholder
+                                'close_p': price,
+                                'ycp': price,   # Yesterday's close (placeholder)
+                                'change': 0.0,  # Calculate if we had ycp
+                                'trade': 0,     # Not available in this format
+                                'value_mn': 0.0,
+                                'volume': 0
+                            }
+                    except (ValueError, IndexError):
+                        continue
         return stocks
 
-    @st.cache_data(ttl=300)  # Cache for 5 minutes
-    def _get_cached_quotes(_self) -> Dict[str, Dict]:
+    def _get_cached_quotes(self) -> Dict[str, Dict]:
         """Get cached quotes data or fetch fresh data"""
-        quotes_data = _self._make_request(_self.endpoints['quotes'])
-        return _self._parse_quotes_data(quotes_data)
+        # Simple caching without Streamlit decorator
+        cache_key = 'quotes_data'
+        current_time = datetime.now()
+
+        if (cache_key in self._cache and
+            (current_time - self._cache[cache_key]['timestamp']).seconds < self._cache_timeout):
+            return self._cache[cache_key]['data']
+
+        quotes_data = self._make_request(self.endpoints['quotes'])
+        parsed_data = self._parse_quotes_data(quotes_data)
+
+        self._cache[cache_key] = {
+            'data': parsed_data,
+            'timestamp': current_time
+        }
+
+        return parsed_data
 
     def dsefinance(self, symbol: str, attribute: str, start_date: str = None, end_date: str = None) -> Union[Dict, pd.DataFrame, None]:
         """

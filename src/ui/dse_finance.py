@@ -51,6 +51,9 @@ class DSEFinanceUI:
         """Render quick stock lookup interface"""
         st.subheader("🔍 Quick Stock Lookup")
 
+        # Initialize search_results to avoid UnboundLocalError
+        search_results = []
+
         col1, col2 = st.columns([2, 1])
 
         with col1:
@@ -90,7 +93,7 @@ class DSEFinanceUI:
 
         with col2:
             st.write("**Popular Stocks:**")
-            popular_stocks = ['GP', 'SQURPHARMA', 'BEXIMCO', 'LHBL', 'BRACBANK', 'EBL']
+            popular_stocks = ['SQURPHARMA', 'DHAKABANK', 'ISLAMIBANK', 'PRIMEBANK', 'PUBALIBANK', 'TECHNODRUG']
 
             for stock in popular_stocks:
                 if st.button(f"📊 {stock}", key=f"popular_{stock}"):

@@ -129,8 +129,8 @@ class PortfolioUI:
                 
                 # Sort by current value (largest holdings first)
                 df['sort_value'] = df['Current Value'].str.replace('৳', '').str.replace(',', '').astype(float)
-                df = df.sort_values('sort_value', ascending=False).drop('sort_value', axis=1)
-                
+                df = df.sort_values('sort_value', ascending=False)
+
                 # Color coding for P&L
                 def color_pnl(val):
                     if '+' in str(val):
@@ -138,23 +138,32 @@ class PortfolioUI:
                     elif '-' in str(val):
                         return 'color: red'
                     return ''
-                
-                styled_df = df.style.applymap(color_pnl, subset=['P&L', 'P&L %'])
+
+                # Create a copy for display without the sort column
+                display_df = df.drop('sort_value', axis=1)
+                styled_df = display_df.style.applymap(color_pnl, subset=['P&L', 'P&L %'])
                 st.dataframe(styled_df, use_container_width=True, hide_index=True)
-                
+
                 # Holdings pie chart
                 st.subheader("Holdings Distribution")
-                
-                fig = px.pie(
-                    df,
-                    values='sort_value',
-                    names='Symbol',
-                    title='Portfolio Holdings by Value',
-                    hover_data=['Weight']
-                )
-                
-                fig.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig, use_container_width=True)
+
+                try:
+                    if len(df) > 0 and 'sort_value' in df.columns:
+                        fig = px.pie(
+                            df,
+                            values='sort_value',
+                            names='Symbol',
+                            title='Portfolio Holdings by Value'
+                        )
+                        fig.update_traces(textposition='inside', textinfo='percent+label')
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("No data available for holdings chart")
+                except Exception as chart_error:
+                    st.error(f"Error creating holdings chart: {chart_error}")
+                    st.info("Chart data debugging:")
+                    st.write("DataFrame columns:", df.columns.tolist())
+                    st.write("DataFrame shape:", df.shape)
             
             else:
                 st.info("No holdings found. Add some transactions to see your portfolio holdings.")
@@ -313,7 +322,7 @@ class PortfolioUI:
                 
                 # Sort by P&L (best performers first)
                 df['sort_pnl'] = df['Unrealized P&L'].str.replace('৳', '').str.replace(',', '').str.replace('+', '').astype(float)
-                df = df.sort_values('sort_pnl', ascending=False).drop('sort_pnl', axis=1)
+                df = df.sort_values('sort_pnl', ascending=False)
                 
                 # Color coding
                 def color_pnl(val):
@@ -323,32 +332,42 @@ class PortfolioUI:
                         return 'color: red'
                     return ''
                 
-                styled_df = df.style.applymap(color_pnl, subset=['Unrealized P&L', 'P&L %'])
+                # Create display dataframe without sort column
+                display_df = df.drop('sort_pnl', axis=1)
+                styled_df = display_df.style.applymap(color_pnl, subset=['Unrealized P&L', 'P&L %'])
                 st.dataframe(styled_df, use_container_width=True, hide_index=True)
                 
                 # P&L distribution chart
                 st.subheader("P&L Distribution")
-                
-                fig = go.Figure()
-                
-                colors = ['green' if '+' in pnl else 'red' for pnl in df['Unrealized P&L']]
-                
-                fig.add_trace(go.Bar(
-                    x=df['Symbol'],
-                    y=df['sort_pnl'],
-                    marker_color=colors,
-                    text=df['P&L %'],
-                    textposition='auto'
-                ))
-                
-                fig.update_layout(
-                    title="Unrealized P&L by Stock",
-                    xaxis_title="Stock Symbol",
-                    yaxis_title="P&L (৳)",
-                    showlegend=False
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
+
+                try:
+                    if len(df) > 0 and 'sort_pnl' in df.columns:
+                        fig = go.Figure()
+
+                        colors = ['green' if '+' in pnl else 'red' for pnl in df['Unrealized P&L']]
+
+                        fig.add_trace(go.Bar(
+                            x=df['Symbol'],
+                            y=df['sort_pnl'],
+                            marker_color=colors,
+                            text=df['P&L %'],
+                            textposition='auto'
+                        ))
+
+                        fig.update_layout(
+                            title="Unrealized P&L by Stock",
+                            xaxis_title="Stock Symbol",
+                            yaxis_title="P&L (৳)",
+                            showlegend=False
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("No data available for P&L chart")
+                except Exception as chart_error:
+                    st.error(f"Error creating P&L chart: {chart_error}")
+                    st.info("Chart data debugging:")
+                    st.write("DataFrame columns:", df.columns.tolist())
+                    st.write("DataFrame shape:", df.shape)
             
             else:
                 st.info("No holdings found for P&L analysis.")

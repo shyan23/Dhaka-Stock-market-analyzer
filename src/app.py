@@ -119,6 +119,10 @@ class StockMarketApp:
         if 'last_update' not in st.session_state:
             st.session_state.last_update = None
 
+        # Initialize portfolio settings
+        if 'portfolio_settings' not in st.session_state:
+            st.session_state.portfolio_settings = self._load_portfolio_settings()
+
         # Mark data as loaded to avoid reloading on every rerun
         if 'data_loaded' not in st.session_state:
             st.session_state.data_loaded = True
@@ -221,7 +225,7 @@ class StockMarketApp:
                 f"{market_status['next_change']} in {market_status['time_until_change']}")
 
         # Main settings tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Ticker Configuration", "🔧 API Settings", "📤 Export & Reports", "💾 Data Management"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Ticker Configuration", "🔧 API Settings", "📤 Export & Reports", "💾 Data Management", "💰 Portfolio Settings"])
 
         with tab1:
             self._render_ticker_configuration()
@@ -234,6 +238,9 @@ class StockMarketApp:
 
         with tab4:
             self._render_data_management()
+
+        with tab5:
+            self._render_portfolio_settings()
 
         # Storage Switching section
         st.markdown("---")
@@ -900,6 +907,27 @@ class StockMarketApp:
             print(f"Error loading transactions: {e}")
         return []
 
+    def _load_portfolio_settings(self) -> Dict[str, Any]:
+        """Load portfolio settings from persistent storage"""
+        try:
+            if self.config.APP_MODE == "redis" and self.data_manager.redis_client:
+                settings_data = self.data_manager.redis_client.get("app:portfolio_settings")
+                if settings_data:
+                    settings = json.loads(settings_data)
+                    # Convert string dates back to date objects
+                    if 'fund_set_date' in settings and isinstance(settings['fund_set_date'], str):
+                        settings['fund_set_date'] = datetime.strptime(settings['fund_set_date'], '%Y-%m-%d').date()
+                    return settings
+        except Exception as e:
+            print(f"Error loading portfolio settings: {e}")
+
+        # Return default settings
+        return {
+            'initial_fund': 100000.0,  # Default ৳1,00,000
+            'fund_set_date': datetime.now().date(),
+            'enable_fund_tracking': True
+        }
+
     def _save_selected_stocks(self):
         """Save selected stocks to persistent storage"""
         try:
@@ -933,3 +961,117 @@ class StockMarketApp:
             # Refresh portfolio items in session state
             st.session_state.portfolio_items = self._load_portfolio_items()
         return success
+
+    def _render_portfolio_settings(self):
+        """Render portfolio settings interface"""
+        st.subheader("💰 Portfolio Settings")
+
+        # Initialize session state for portfolio settings if not exists
+        if 'portfolio_settings' not in st.session_state:
+            st.session_state.portfolio_settings = {
+                'initial_fund': 100000.0,  # Default ৳1,00,000
+                'fund_set_date': datetime.now().date(),
+                'enable_fund_tracking': True
+            }
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write("**Initial Investment Fund Setup**")
+            st.info("Set your starting investment amount to track performance against your initial capital.")
+
+            # Initial fund amount
+            initial_fund = st.number_input(
+                "Initial Fund Amount (৳):",
+                min_value=1000.0,
+                value=st.session_state.portfolio_settings['initial_fund'],
+                step=1000.0,
+                format="%.2f",
+                help="Your starting investment capital"
+            )
+
+            # Fund set date
+            fund_set_date = st.date_input(
+                "Fund Set Date:",
+                value=st.session_state.portfolio_settings['fund_set_date'],
+                max_value=datetime.now().date(),
+                help="Date when you started with this fund amount"
+            )
+
+            # Enable/disable fund tracking
+            enable_fund_tracking = st.checkbox(
+                "Enable Fund Tracking",
+                value=st.session_state.portfolio_settings['enable_fund_tracking'],
+                help="Track portfolio performance against initial fund"
+            )
+
+            if st.button("💾 Save Portfolio Settings", type="primary"):
+                st.session_state.portfolio_settings.update({
+                    'initial_fund': initial_fund,
+                    'fund_set_date': fund_set_date,
+                    'enable_fund_tracking': enable_fund_tracking
+                })
+
+                # Save to persistent storage
+                try:
+                    settings_data = json.dumps(st.session_state.portfolio_settings, default=str)
+                    if self.config.APP_MODE == "redis" and self.data_manager.redis_client:
+                        self.data_manager.redis_client.set("app:portfolio_settings", settings_data)
+                    elif self.config.APP_MODE == "google_sheets":
+                        # Could save to Google Sheets if needed
+                        pass
+                    st.success("✅ Portfolio settings saved successfully!")
+                except Exception as e:
+                    st.error(f"❌ Error saving settings: {e}")
+
+        with col2:
+            st.write("**Portfolio Performance Summary**")
+
+            if enable_fund_tracking and st.session_state.portfolio_items:
+                # Calculate current portfolio value
+                current_value = sum(item.current_value for item in st.session_state.portfolio_items.values())
+
+                # Calculate cash remaining (assuming all invested)
+                total_invested = sum(
+                    trans.total_amount for trans in st.session_state.transactions
+                    if trans.transaction_type.value == "BUY"
+                ) - sum(
+                    trans.total_amount for trans in st.session_state.transactions
+                    if trans.transaction_type.value == "SELL"
+                )
+
+                cash_remaining = initial_fund - total_invested
+                total_portfolio_value = current_value + cash_remaining
+
+                # Performance metrics
+                total_return = total_portfolio_value - initial_fund
+                return_percentage = (total_return / initial_fund * 100) if initial_fund > 0 else 0
+
+                # Display metrics
+                st.metric("Initial Fund", f"৳{initial_fund:,.2f}")
+                st.metric("Current Portfolio", f"৳{current_value:,.2f}")
+                st.metric("Cash Remaining", f"৳{cash_remaining:,.2f}")
+                st.metric("Total Value", f"৳{total_portfolio_value:,.2f}")
+                st.metric("Total Return", f"৳{total_return:,.2f}", f"{return_percentage:+.2f}%")
+
+                # Visual indicator
+                if return_percentage > 0:
+                    st.success(f"📈 Portfolio is up {return_percentage:.2f}% from initial fund")
+                elif return_percentage < 0:
+                    st.error(f"📉 Portfolio is down {return_percentage:.2f}% from initial fund")
+                else:
+                    st.info("📊 Portfolio is at break-even")
+            else:
+                st.info("Enable fund tracking and add some portfolio holdings to see performance metrics.")
+
+            # Reset option
+            st.write("**Reset Options**")
+            if st.button("🔄 Reset to Current Portfolio Value", help="Set initial fund to current portfolio value"):
+                if st.session_state.portfolio_items:
+                    current_value = sum(item.current_value for item in st.session_state.portfolio_items.values())
+                    st.session_state.portfolio_settings['initial_fund'] = current_value
+                    st.session_state.portfolio_settings['fund_set_date'] = datetime.now().date()
+                    st.success(f"✅ Initial fund reset to current portfolio value: ৳{current_value:,.2f}")
+                    st.rerun()
+                else:
+                    st.warning("No portfolio holdings found to calculate current value")

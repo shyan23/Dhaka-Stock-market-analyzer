@@ -30,7 +30,78 @@ class TransactionsUI:
     def _render_new_transaction(self):
         """Render new transaction form"""
         st.subheader("➕ Record New Transaction")
-        
+
+        # Initialize cash balance if not exists
+        if 'cash_balance' not in st.session_state:
+            st.session_state.cash_balance = st.session_state.portfolio_settings.get('initial_fund', 100000.0)
+
+        # Cash Management Section
+        col_cash1, col_cash2, col_cash3 = st.columns([2, 1, 1])
+        with col_cash1:
+            st.metric("💰 Available Cash", f"৳{st.session_state.cash_balance:,.2f}")
+        with col_cash2:
+            if st.button("💵 Deposit Cash", key="deposit_cash_btn"):
+                st.session_state.show_deposit_form = True
+        with col_cash3:
+            if st.button("📊 Cash History", key="cash_history_btn"):
+                st.session_state.show_cash_history = True
+
+        # Deposit cash form
+        if st.session_state.get('show_deposit_form', False):
+            with st.form("deposit_form"):
+                st.subheader("💵 Deposit Cash")
+                deposit_amount = st.number_input(
+                    "Deposit Amount (৳):",
+                    min_value=100.0,
+                    value=10000.0,
+                    step=1000.0,
+                    format="%.2f"
+                )
+                deposit_note = st.text_input("Note (optional):", placeholder="e.g., Monthly investment")
+
+                col_dep1, col_dep2 = st.columns(2)
+                with col_dep1:
+                    if st.form_submit_button("💾 Deposit", type="primary"):
+                        st.session_state.cash_balance += deposit_amount
+                        # Log the deposit
+                        if 'cash_transactions' not in st.session_state:
+                            st.session_state.cash_transactions = []
+                        st.session_state.cash_transactions.append({
+                            'type': 'DEPOSIT',
+                            'amount': deposit_amount,
+                            'note': deposit_note,
+                            'timestamp': datetime.now(),
+                            'balance': st.session_state.cash_balance
+                        })
+                        st.success(f"✅ Deposited ৳{deposit_amount:,.2f}")
+                        st.session_state.show_deposit_form = False
+                        st.rerun()
+                with col_dep2:
+                    if st.form_submit_button("❌ Cancel"):
+                        st.session_state.show_deposit_form = False
+                        st.rerun()
+
+        # Price suggestion buttons (outside form)
+        selected_symbol = st.session_state.get('temp_transaction_symbol', '')
+        if selected_symbol and st.session_state.selected_stocks and selected_symbol in st.session_state.selected_stocks:
+            stock = self.dse_api.get_stock_by_symbol(selected_symbol)
+            if stock:
+                st.info(f"📊 Current LTP for {selected_symbol}: ৳{stock.current_price:.2f}")
+
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    if st.button("Use LTP", key="use_ltp"):
+                        st.session_state.transaction_price = stock.current_price
+                        st.rerun()
+                with col_b:
+                    if st.button("-5%", key="price_minus_5"):
+                        st.session_state.transaction_price = stock.current_price * 0.95
+                        st.rerun()
+                with col_c:
+                    if st.button("+5%", key="price_plus_5"):
+                        st.session_state.transaction_price = stock.current_price * 1.05
+                        st.rerun()
+
         # Transaction form
         with st.form("transaction_form"):
             col1, col2 = st.columns(2)
@@ -40,9 +111,12 @@ class TransactionsUI:
                 if st.session_state.selected_stocks:
                     symbol = st.selectbox(
                         "Select Stock:",
-                        options=[""] + st.session_state.selected_stocks,
+                        options=st.session_state.selected_stocks,
                         key="transaction_symbol"
                     )
+                    # Store in temp variable for price suggestions (without callback)
+                    if symbol:
+                        st.session_state.temp_transaction_symbol = symbol
                 else:
                     st.warning("No stocks selected for tracking. Please go to Stock Selector to add stocks.")
                     symbol = None
@@ -66,10 +140,10 @@ class TransactionsUI:
             
             with col2:
                 # Get current price for selected stock
-                current_stock_price = 0.01
+                current_stock_price = st.session_state.get('transaction_price', 0.01)
                 if symbol:
                     stock = self.dse_api.get_stock_by_symbol(symbol)
-                    if stock and stock.current_price > 0:
+                    if stock and stock.current_price > 0 and current_stock_price == 0.01:
                         current_stock_price = stock.current_price
 
                 # Price
@@ -82,28 +156,10 @@ class TransactionsUI:
                     key="transaction_price"
                 )
 
-                # Current price display and suggestions
+                # Price validation (simplified, no buttons inside form)
                 if symbol:
                     stock = self.dse_api.get_stock_by_symbol(symbol)
                     if stock:
-                        st.info(f"📊 Current LTP: ৳{stock.current_price:.2f}")
-
-                        # Quick price buttons
-                        col_a, col_b, col_c = st.columns(3)
-                        with col_a:
-                            if st.button("Use LTP", key="use_ltp"):
-                                st.session_state.transaction_price = stock.current_price
-                                st.rerun()
-                        with col_b:
-                            if st.button("-5%", key="price_minus_5"):
-                                st.session_state.transaction_price = stock.current_price * 0.95
-                                st.rerun()
-                        with col_c:
-                            if st.button("+5%", key="price_plus_5"):
-                                st.session_state.transaction_price = stock.current_price * 1.05
-                                st.rerun()
-
-                        # Price validation
                         price_diff = abs(price - stock.current_price) if price > 0 else 0
                         price_diff_percent = (price_diff / stock.current_price * 100) if stock.current_price > 0 else 0
 
@@ -114,6 +170,52 @@ class TransactionsUI:
                     else:
                         st.error(f"❌ Could not fetch current price for {symbol}")
                 
+                # Transaction Date
+                transaction_date = st.date_input(
+                    "Transaction Date:",
+                    value=datetime.now().date(),
+                    max_value=datetime.now().date(),
+                    key="transaction_date",
+                    help="Select the date when the transaction occurred"
+                )
+
+                # Brokerage Fee
+                st.write("**Brokerage & Fees:**")
+                col_fee1, col_fee2 = st.columns(2)
+                with col_fee1:
+                    brokerage_type = st.selectbox(
+                        "Fee Type:",
+                        options=["Percentage", "Fixed Amount"],
+                        key="brokerage_type",
+                        help="Choose between percentage-based or fixed fee"
+                    )
+                with col_fee2:
+                    if brokerage_type == "Percentage":
+                        brokerage_rate = st.number_input(
+                            "Brokerage Rate (%):",
+                            min_value=0.0,
+                            max_value=5.0,
+                            value=0.5,
+                            step=0.1,
+                            format="%.2f",
+                            key="brokerage_rate",
+                            help="Typical rate: 0.3-0.5%"
+                        )
+                        brokerage_fee = (price * quantity * brokerage_rate / 100) if price > 0 and quantity > 0 else 0
+                    else:
+                        brokerage_fee = st.number_input(
+                            "Fixed Fee (৳):",
+                            min_value=0.0,
+                            value=50.0,
+                            step=10.0,
+                            format="%.2f",
+                            key="brokerage_fee",
+                            help="Fixed brokerage fee amount"
+                        )
+
+                if brokerage_fee > 0:
+                    st.info(f"💰 Brokerage Fee: ৳{brokerage_fee:.2f}")
+
                 # Notes
                 notes = st.text_area(
                     "Notes (optional):",
@@ -121,19 +223,30 @@ class TransactionsUI:
                     key="transaction_notes"
                 )
             
-            # Holdings validation for sell transactions
-            if symbol and transaction_type == TransactionType.SELL:
+            # Cash balance and holdings validation
+            can_proceed = True
+            total_cost = (price * quantity) + brokerage_fee
+
+            # For buy transactions, check cash balance
+            if symbol and transaction_type == TransactionType.BUY:
+                if total_cost > st.session_state.cash_balance:
+                    st.error(f"❌ Insufficient cash! Need ৳{total_cost:,.2f} but only have ৳{st.session_state.cash_balance:,.2f}")
+                    st.info(f"💡 You need ৳{total_cost - st.session_state.cash_balance:,.2f} more. Use 'Deposit Cash' button above.")
+                    can_proceed = False
+                else:
+                    st.success(f"✅ Sufficient cash available. Cost: ৳{total_cost:,.2f}")
+
+            # For sell transactions, check holdings
+            elif symbol and transaction_type == TransactionType.SELL:
                 portfolio_item = st.session_state.portfolio_items.get(symbol)
                 if not portfolio_item or portfolio_item.quantity < quantity:
                     available_qty = portfolio_item.quantity if portfolio_item else 0
                     st.error(f"❌ Insufficient holdings! You have {available_qty} shares of {symbol}, trying to sell {quantity}")
                     can_proceed = False
                 else:
-                    st.success(f"✅ You have {portfolio_item.quantity} shares of {symbol}")
-                    can_proceed = True
-            else:
-                can_proceed = True
-            
+                    proceeds = (price * quantity) - brokerage_fee
+                    st.success(f"✅ You have {portfolio_item.quantity} shares of {symbol}. Proceeds: ৳{proceeds:,.2f}")
+
             # Submit button with validation info
             submit_disabled = not can_proceed or not symbol or quantity <= 0 or price <= 0
 
@@ -155,7 +268,9 @@ class TransactionsUI:
             )
             
             if submitted:
-                self._process_transaction(symbol, transaction_type, quantity, price, notes)
+                # Convert date to datetime
+                transaction_datetime = datetime.combine(transaction_date, datetime.now().time())
+                self._process_transaction(symbol, transaction_type, quantity, price, notes, transaction_datetime, brokerage_fee)
     
     def _render_quick_trade(self):
         """Render quick trade interface"""
@@ -343,9 +458,25 @@ class TransactionsUI:
         else:
             st.info("No transactions match the selected filters.")
     
-    def _process_transaction(self, symbol: str, transaction_type: TransactionType, quantity: int, price: float, notes: str):
-        """Process a new transaction"""
+    def _process_transaction(self, symbol: str, transaction_type: TransactionType, quantity: int, price: float, notes: str, transaction_datetime: datetime = None, brokerage_fee: float = 0.0):
+        """Process a new transaction with cash management and brokerage fees"""
         try:
+            # Calculate total costs/proceeds
+            base_amount = price * quantity
+
+            if transaction_type == TransactionType.BUY:
+                total_cost = base_amount + brokerage_fee
+                # Check cash balance one more time
+                if total_cost > st.session_state.cash_balance:
+                    st.error(f"❌ Insufficient cash for transaction!")
+                    return
+                # Deduct from cash
+                st.session_state.cash_balance -= total_cost
+            else:  # SELL
+                proceeds = base_amount - brokerage_fee
+                # Add to cash
+                st.session_state.cash_balance += proceeds
+
             # Create transaction
             transaction = Transaction(
                 id=str(uuid.uuid4()),
@@ -353,33 +484,66 @@ class TransactionsUI:
                 transaction_type=transaction_type,
                 quantity=quantity,
                 price=price,
-                timestamp=datetime.now(),
-                notes=notes
+                timestamp=transaction_datetime or datetime.now(),
+                notes=f"{notes}\nBrokerage Fee: ৳{brokerage_fee:.2f}" if brokerage_fee > 0 else notes
             )
-            
+
             # Add to transactions list
             st.session_state.transactions.append(transaction)
-            
+
             # Update portfolio
             self._update_portfolio(transaction)
-            
+
             # Save to data manager
             self.data_manager.save_transaction(transaction)
-            
+
+            # Log cash transaction
+            if 'cash_transactions' not in st.session_state:
+                st.session_state.cash_transactions = []
+
+            cash_type = "BUY" if transaction_type == TransactionType.BUY else "SELL"
+            amount = -total_cost if transaction_type == TransactionType.BUY else proceeds
+
+            st.session_state.cash_transactions.append({
+                'type': cash_type,
+                'amount': amount,
+                'note': f"{symbol} - {quantity:,} shares @ ৳{price:.2f}",
+                'timestamp': transaction_datetime or datetime.now(),
+                'balance': st.session_state.cash_balance,
+                'brokerage_fee': brokerage_fee
+            })
+
             # Success message
             st.success(f"✅ {transaction_type.value} transaction recorded for {symbol}")
-            
+
             # Show transaction details
-            st.info(f"""
-            **Transaction Details:**
-            - Symbol: {symbol}
-            - Type: {transaction_type.value}
-            - Quantity: {quantity:,}
-            - Price: ৳{price:.2f}
-            - Total: ৳{transaction.total_amount:,.2f}
-            - Time: {transaction.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
-            """)
-            
+            if transaction_type == TransactionType.BUY:
+                st.info(f"""
+                **Transaction Details:**
+                - Symbol: {symbol}
+                - Type: {transaction_type.value}
+                - Quantity: {quantity:,}
+                - Price: ৳{price:.2f}
+                - Subtotal: ৳{base_amount:,.2f}
+                - Brokerage Fee: ৳{brokerage_fee:.2f}
+                - Total Cost: ৳{total_cost:,.2f}
+                - Remaining Cash: ৳{st.session_state.cash_balance:,.2f}
+                - Time: {transaction.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+                """)
+            else:
+                st.info(f"""
+                **Transaction Details:**
+                - Symbol: {symbol}
+                - Type: {transaction_type.value}
+                - Quantity: {quantity:,}
+                - Price: ৳{price:.2f}
+                - Subtotal: ৳{base_amount:,.2f}
+                - Brokerage Fee: ৳{brokerage_fee:.2f}
+                - Net Proceeds: ৳{proceeds:,.2f}
+                - Total Cash: ৳{st.session_state.cash_balance:,.2f}
+                - Time: {transaction.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+                """)
+
             st.rerun()
         
         except Exception as e:
