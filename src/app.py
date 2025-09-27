@@ -18,6 +18,7 @@ from src.ui.portfolio import PortfolioUI
 from src.ui.transactions import TransactionsUI
 from src.ui.setup_wizard import SetupWizardUI
 from src.ui.price_tracker import PriceTrackerUI
+from src.ui.dse_finance import DSEFinanceUI
 from src.services.data_manager import DataManager
 
 class StockMarketApp:
@@ -36,6 +37,7 @@ class StockMarketApp:
         self.portfolio_ui = PortfolioUI(self.dse_api, self.data_manager)
         self.transactions_ui = TransactionsUI(self.dse_api, self.data_manager)
         self.price_tracker_ui = PriceTrackerUI(self.dse_api, self.data_manager)
+        self.dse_finance_ui = DSEFinanceUI()
 
         # Make app instance available for persistence calls
         self._setup_ui_persistence()
@@ -162,7 +164,7 @@ class StockMarketApp:
             # Navigation
             page = st.selectbox(
                 "Navigate",
-                ["Dashboard", "Stock Selector", "Portfolio", "Transactions", "Price Tracker", "Settings"],
+                ["Dashboard", "Stock Selector", "Portfolio", "Transactions", "Price Tracker", "DSE Finance", "Settings"],
                 index=0
             )
             
@@ -199,6 +201,8 @@ class StockMarketApp:
             self.transactions_ui.render()
         elif page == "Price Tracker":
             self.price_tracker_ui.render()
+        elif page == "DSE Finance":
+            self.dse_finance_ui.render()
         elif page == "Settings":
             self._render_settings()
     
