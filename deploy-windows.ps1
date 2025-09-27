@@ -118,20 +118,59 @@ function Test-DockerCompose {
 function Initialize-Config {
     Write-Info "Initializing configuration..."
 
+    # Check for Google Sheets setup
+    $hasGoogleCreds = (Test-Path "credentials\service.json") -or (Test-Path "credentials\google_credentials.json")
+
     if (-not (Test-Path $CONFIG_FILE)) {
+        # Determine default storage type based on available credentials
+        $storageType = if ($hasGoogleCreds) { "google_sheets" } else { "redis" }
+
         $defaultConfig = @{
-            storage_type = "redis"
-            app_mode = "redis"
+            storage_type = $storageType
+            app_mode = $storageType
             redis_host = "redis"
             redis_port = 6379
             first_run = $true
             created_at = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
 
+        # Add Google Sheets config if credentials exist
+        if ($hasGoogleCreds) {
+            $defaultConfig.google_credentials_file = "/app/credentials/google_credentials.json"
+            # Try to read existing sheet ID from any previous config
+            $defaultConfig.google_sheet_id = ""
+            Write-Info "Google credentials detected - configuring for Google Sheets storage"
+        }
+
         $defaultConfig | ConvertTo-Json -Depth 10 | Set-Content $CONFIG_FILE -Encoding UTF8
-        Write-Success "Created default configuration file"
+        Write-Success "Created configuration file for $storageType storage"
     } else {
         Write-Info "Configuration file already exists"
+
+        # Auto-upgrade existing config if Google credentials are available
+        if ($hasGoogleCreds) {
+            try {
+                $existingConfig = Get-Content $CONFIG_FILE | ConvertFrom-Json
+                if ($existingConfig.storage_type -eq "redis" -and -not $existingConfig.google_credentials_file) {
+                    Write-Info "Google credentials found - would you like to switch to Google Sheets?"
+                    Write-Host "Run '.\setup-google-sheets.ps1' to configure Google Sheets storage" -ForegroundColor $YELLOW
+                }
+            } catch {
+                Write-Warning "Could not read existing configuration"
+            }
+        }
+    }
+
+    # Ensure credentials directory exists
+    if (-not (Test-Path "credentials")) {
+        New-Item -ItemType Directory -Path "credentials" -Force | Out-Null
+        Write-Success "Created credentials directory"
+    }
+
+    # Copy service.json to expected filename if needed
+    if ((Test-Path "credentials\service.json") -and -not (Test-Path "credentials\google_credentials.json")) {
+        Copy-Item "credentials\service.json" "credentials\google_credentials.json" -Force
+        Write-Info "Prepared Google credentials for Docker"
     }
 }
 
@@ -265,6 +304,28 @@ function Start-Application {
 
     Initialize-Config
 
+    # Check if Google Sheets setup is incomplete
+    $hasGoogleCreds = (Test-Path "credentials\service.json") -or (Test-Path "credentials\google_credentials.json")
+    if ($hasGoogleCreds) {
+        try {
+            $config = Get-Content $CONFIG_FILE | ConvertFrom-Json
+            if ($config.storage_type -eq "google_sheets" -and (-not $config.google_sheet_id -or $config.google_sheet_id -eq "")) {
+                Write-Warning "Google credentials found but Google Sheets ID is missing!"
+                Write-Host ""
+                Write-Host "To complete Google Sheets setup, run:" -ForegroundColor $YELLOW
+                Write-Host ".\setup-google-sheets.ps1" -ForegroundColor $GREEN
+                Write-Host ""
+                $continue = Read-Host "Continue with current setup? (Y/n)"
+                if ($continue.ToLower() -eq "n") {
+                    Write-Info "Setup cancelled. Run the Google Sheets setup wizard first."
+                    return
+                }
+            }
+        } catch {
+            Write-Warning "Could not validate Google Sheets configuration"
+        }
+    }
+
     if ($Build) {
         Write-Info "Building and starting application..."
         docker compose up -d --build
@@ -276,11 +337,28 @@ function Start-Application {
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Application started successfully!"
         Write-Host ""
+
+        # Show storage type
+        try {
+            $config = Get-Content $CONFIG_FILE | ConvertFrom-Json
+            $storageDisplay = if ($config.storage_type -eq "google_sheets") { "📈 Google Sheets" } else { "🗄️ Redis Database" }
+            Write-Info "Storage: $storageDisplay"
+        } catch {
+            Write-Info "Storage: Default configuration"
+        }
+
+        Write-Host ""
         Write-Host "🌐 Access your application at: " -NoNewline -ForegroundColor $BLUE
         Write-Host "http://localhost:8501" -ForegroundColor $GREEN
         Write-Host ""
         Write-Info "Use '.\deploy-windows.ps1 -Logs' to view application logs"
         Write-Info "Use '.\deploy-windows.ps1 -Status' to check container status"
+
+        # Show Google Sheets setup reminder if applicable
+        if ($hasGoogleCreds) {
+            Write-Host ""
+            Write-Info "💡 Tip: Use '.\setup-google-sheets.ps1' to configure Google Sheets"
+        }
 
         # Wait a moment and check if containers are healthy
         Write-Info "Waiting for services to start..."
