@@ -21,6 +21,8 @@ from src.services.data_manager import DataManager
 from src.services.settings_manager import SettingsManager
 
 # UI components
+from src.ui.landing_page import LandingPageUI
+from src.ui.profile import ProfileUI
 from src.ui.dashboard import DashboardUI
 from src.ui.stock_selector import StockSelectorUI
 from src.ui.portfolio import PortfolioUI
@@ -62,14 +64,16 @@ class StockMarketApp:
         self.data_manager = DataManager()
         self.data_loader = DataLoader(self.config, self.data_manager, self.dse_api)
 
-        # Session management
-        self.session_manager = SessionManager(self.auth_service)
+        # Session management (with data_manager for token storage)
+        self.session_manager = SessionManager(self.auth_service, self.data_manager)
 
         # Settings management
         self.settings_manager = SettingsManager(self.config, self.data_manager, self.session_manager)
 
     def _initialize_ui_components(self):
         """Initialize all UI components"""
+        self.landing_page_ui = LandingPageUI(self.auth_service)
+        self.profile_ui = ProfileUI(self.auth_service)
         self.setup_wizard_ui = SetupWizardUI()
         self.dashboard_ui = DashboardUI(self.dse_api, self.data_manager)
         self.stock_selector_ui = StockSelectorUI(self.dse_api, self.data_manager)
@@ -101,11 +105,11 @@ class StockMarketApp:
 
         if authentication_status == False:
             st.error('❌ Username/password is incorrect')
-            self._show_demo_credentials()
+            self.landing_page_ui.render()
             return False
         elif authentication_status == None:
-            st.warning('⚠️ Please enter your username and password')
-            self._show_demo_credentials()
+            # Show landing page for non-authenticated users
+            self.landing_page_ui.render()
             self.auth_service.render_registration_form()
             return False
         elif authentication_status:
@@ -152,7 +156,7 @@ class StockMarketApp:
             st.title("📈 Stock Market Analyzer")
 
             # Authentication info
-            self.auth_service.show_login_info()
+            self.auth_service.show_login_info(self.session_manager, self.data_manager)
 
             # Storage mode info
             mode_display = "📈 Google Sheets" if self.config.APP_MODE == "google_sheets" else "🗄️ Redis"
@@ -163,7 +167,7 @@ class StockMarketApp:
             # Navigation
             page = st.selectbox(
                 "Navigate",
-                ["Dashboard", "Stock Selector", "Portfolio", "Transactions", "Price Tracker", "DSE Finance", "Settings"],
+                ["Dashboard", "Profile", "Stock Selector", "Portfolio", "Transactions", "Price Tracker", "DSE Finance", "Settings"],
                 index=0,
                 key="current_page"
             )
@@ -209,6 +213,8 @@ class StockMarketApp:
         try:
             if page == "Dashboard":
                 self.dashboard_ui.render()
+            elif page == "Profile":
+                self.profile_ui.render()
             elif page == "Stock Selector":
                 self.stock_selector_ui.render()
             elif page == "Portfolio":
@@ -223,6 +229,12 @@ class StockMarketApp:
                 self.settings_manager.render_settings_page()
             else:
                 st.error(f"Unknown page: {page}")
+
+            # Auto-sync user data after page rendering to ensure persistence
+            try:
+                self.session_manager.sync_user_data(self.data_manager)
+            except Exception as sync_error:
+                print(f"Auto-sync error: {sync_error}")
 
         except Exception as e:
             st.error(f"Error rendering {page}: {e}")

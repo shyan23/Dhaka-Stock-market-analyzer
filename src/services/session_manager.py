@@ -1,27 +1,55 @@
 """
 Session State Manager for Stock Market Analyzer
-Handles user-specific session state management
+Handles user-specific session state management with token-based sessions
 """
 
 import streamlit as st
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from src.models.portfolio import PortfolioItem, Transaction
+from src.services.session_token import SessionToken, SessionTokenManager
 
 
 class SessionManager:
-    """Manages user-specific session state variables"""
+    """Manages user-specific session state variables with token-based sessions"""
 
-    def __init__(self, auth_service):
+    def __init__(self, auth_service, data_manager=None):
         self.auth_service = auth_service
+        self.data_manager = data_manager
+        self.token_manager = SessionTokenManager(data_manager)
+
+    def get_current_token(self) -> Optional[SessionToken]:
+        """Get current session token"""
+        # Check if token exists in session state
+        if 'session_token' in st.session_state:
+            token = st.session_state.session_token
+            if isinstance(token, SessionToken) and token.is_valid():
+                return token
+
+        # Try to get/create token for current user
+        username = st.session_state.get('username')
+        if username:
+            token = self.token_manager.get_or_create_session(username)
+            st.session_state.session_token = token
+            return token
+
+        return None
 
     def get_user_prefix(self) -> str:
-        """Get session prefix for current user"""
+        """Get session prefix for current user (now uses token)"""
+        token = self.get_current_token()
+        if token:
+            # Use session ID instead of username for better security
+            session_id = token.get_session_id()
+            return f"session_{session_id}_"
+
+        # Fallback to old username-based prefix
         return self.auth_service.get_user_session_prefix()
 
     def initialize_user_session(self, data_loader):
         """Initialize user-specific session state variables"""
         user_prefix = self.get_user_prefix()
+        print(f"Initializing session for user prefix: {user_prefix}")
 
         # User-specific session state keys
         keys = {
@@ -35,7 +63,9 @@ class SessionManager:
 
         # Initialize user-specific data
         if keys['selected_stocks'] not in st.session_state:
-            st.session_state[keys['selected_stocks']] = data_loader.load_selected_stocks()
+            loaded_stocks = data_loader.load_selected_stocks()
+            st.session_state[keys['selected_stocks']] = loaded_stocks
+            print(f"Loaded {len(loaded_stocks)} stocks from Redis for user")
 
         if keys['portfolio_items'] not in st.session_state:
             st.session_state[keys['portfolio_items']] = data_loader.load_portfolio_items()
@@ -59,6 +89,8 @@ class SessionManager:
         st.session_state.portfolio_settings = st.session_state[keys['portfolio_settings']]
         st.session_state.cash_balance = st.session_state[keys['cash_balance']]
         st.session_state.cash_transactions = st.session_state[keys['cash_transactions']]
+
+        print(f"Session aliases set - selected_stocks: {len(st.session_state.selected_stocks)} items")
 
         # Mark data as loaded
         if f'{user_prefix}data_loaded' not in st.session_state:
@@ -88,8 +120,8 @@ class SessionManager:
         if hasattr(st.session_state, key):
             setattr(st.session_state, key, value)
 
-    def sync_user_data(self):
-        """Sync user data with aliased session state variables"""
+    def sync_user_data(self, data_manager=None):
+        """Sync user data with aliased session state variables and save to Redis"""
         user_prefix = self.get_user_prefix()
 
         # Update user-specific storage with current aliases
@@ -103,18 +135,48 @@ class SessionManager:
                 full_key = f'{user_prefix}{key}'
                 st.session_state[full_key] = getattr(st.session_state, key)
 
+        # If data_manager is provided, save to Redis
+        if data_manager:
+            try:
+                if hasattr(st.session_state, 'selected_stocks'):
+                    data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
+                if hasattr(st.session_state, 'portfolio_items'):
+                    data_manager.save_user_portfolio_items(st.session_state.portfolio_items)
+                if hasattr(st.session_state, 'transactions'):
+                    data_manager.save_user_transactions(st.session_state.transactions)
+                if hasattr(st.session_state, 'portfolio_settings'):
+                    data_manager.save_user_portfolio_settings(st.session_state.portfolio_settings)
+                if hasattr(st.session_state, 'cash_balance'):
+                    data_manager.save_user_cash_balance(st.session_state.cash_balance)
+            except Exception as e:
+                print(f"Error syncing user data to Redis: {e}")
+
     def clear_user_session(self):
-        """Clear user-specific session data (for logout)"""
+        """Clear user-specific session data (for logout) but preserve Redis data"""
         user_prefix = self.get_user_prefix()
 
-        # Find and remove all user-specific keys
-        keys_to_remove = [
-            key for key in st.session_state.keys()
-            if key.startswith(user_prefix)
+        # Invalidate session token
+        username = st.session_state.get('username')
+        if username:
+            self.token_manager.invalidate_session(username)
+
+        # Clear session token from state
+        if 'session_token' in st.session_state:
+            del st.session_state['session_token']
+
+        # Clear session state aliases (not the user-prefixed Redis keys)
+        user_keys = [
+            'selected_stocks', 'portfolio_items', 'transactions',
+            'portfolio_settings', 'cash_balance', 'cash_transactions'
         ]
 
-        for key in keys_to_remove:
-            del st.session_state[key]
+        for key in user_keys:
+            if hasattr(st.session_state, key):
+                delattr(st.session_state, key)
+
+        # Also clear user-specific flags
+        if f'{user_prefix}data_loaded' in st.session_state:
+            del st.session_state[f'{user_prefix}data_loaded']
 
     def get_current_user_info(self) -> Dict[str, str]:
         """Get current user information"""
@@ -135,6 +197,12 @@ class SessionManager:
             return {}
 
         user_info = self.get_current_user_info()
+
+        # Add session token info
+        token = self.get_current_token()
+        if token:
+            user_info['session_id'] = token.get_session_id()
+            user_info['session_valid'] = token.is_valid()
 
         return {
             'user': user_info,

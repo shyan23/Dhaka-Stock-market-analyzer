@@ -8,11 +8,13 @@ import numpy as np
 from src.models.stock import Stock, StockPriceHistory
 from src.services.dse_api import DSEAPIService
 from src.services.data_manager import DataManager
+from src.ui.components.time_range_selector import create_time_range_selector
 
 class PriceTrackerUI:
     def __init__(self, dse_api: DSEAPIService, data_manager: DataManager):
         self.dse_api = dse_api
         self.data_manager = data_manager
+        self.time_range_selector = create_time_range_selector(default_range="1M")
 
     def render(self):
         """Render the Price Tracker page with pivot table equivalent functionality"""
@@ -160,13 +162,23 @@ class PriceTrackerUI:
             return
 
         # Time period and normalization options
-        col1, col2, col3 = st.columns(3)
+        # Configuration options
+        col1, col2 = st.columns(2)
         with col1:
-            days = st.slider("Comparison Period (days)", 7, 90, 30)
-        with col2:
             normalize = st.checkbox("Normalize to 100", value=True, help="Start all stocks at 100 for comparison")
-        with col3:
             chart_type = st.selectbox("Chart Type", ["Line", "Area", "Candlestick"])
+
+        with col2:
+            # Time range selector
+            start_date, end_date = self.time_range_selector.render(
+                key_prefix="price_comparison",
+                show_custom=True,
+                compact=True
+            )
+
+        # Calculate days from date range
+        date_diff = end_date - start_date
+        days = max(1, date_diff.days)
 
         # Fetch historical data for comparison
         comparison_data = {}

@@ -93,24 +93,44 @@ class AuthService:
         name, authentication_status, username = self.authenticator.login()
         return name, authentication_status, username
 
-    def logout(self):
-        """Handle user logout"""
-        self.authenticator.logout()
+    def perform_logout_cleanup(self, session_manager=None, data_manager=None):
+        """Perform cleanup operations during logout"""
+        try:
+            # Save user data to Redis before logout
+            if session_manager and data_manager:
+                print("Saving user data before logout...")
+                session_manager.sync_user_data(data_manager)
+
+            # Clear user session after logout
+            if session_manager:
+                print("Clearing user session...")
+                session_manager.clear_user_session()
+
+            print("Logout cleanup completed successfully")
+            return True
+
+        except Exception as e:
+            print(f"Logout cleanup error: {e}")
+            return False
 
     def register_user(self):
         """Handle new user registration"""
         try:
-            if self.authenticator.register_user('Register user', preauthorization=False):
-                st.success('User registered successfully')
+            result = self.authenticator.register_user(location='main', key='Register user')
+            if result:
+                email, username, name = result
+                st.success(f'User **{name}** registered successfully! Please login with your credentials.')
                 # Save updated config
                 self._save_config()
+                return True
         except Exception as e:
-            st.error(e)
+            st.error(f"Registration error: {e}")
+            return False
 
     def reset_password(self, username):
         """Handle password reset"""
         try:
-            if self.authenticator.reset_password(username, 'Reset password'):
+            if self.authenticator.reset_password(username, location='main', key='Reset password'):
                 st.success('Password modified successfully')
                 # Save updated config
                 self._save_config()
@@ -120,12 +140,29 @@ class AuthService:
     def update_user_details(self, username):
         """Handle updating user details"""
         try:
-            if self.authenticator.update_user_details(username, 'Update user details'):
-                st.success('Entries updated successfully')
+            result = self.authenticator.update_user_details(username, location='main', key='Update user details')
+            if result:
                 # Save updated config
                 self._save_config()
+
+                # Update session state with new name
+                try:
+                    import yaml
+                    from pathlib import Path
+                    config_path = Path("config/auth_config.yaml")
+                    with open(config_path) as file:
+                        config = yaml.load(file, yaml.SafeLoader)
+                    user_data = config['credentials']['usernames'].get(username, {})
+                    new_name = user_data.get('name')
+                    if new_name:
+                        st.session_state['name'] = new_name
+                except:
+                    pass
+
+                st.success('Entries updated successfully! Refreshing...')
+                st.rerun()
         except Exception as e:
-            st.error(e)
+            st.error(f"Update error: {e}")
 
     def _save_config(self):
         """Save the current configuration back to file"""
@@ -159,16 +196,55 @@ class AuthService:
             return f"user_{username}_"
         return "anonymous_"
 
-    def show_login_info(self):
+    def show_login_info(self, session_manager=None, data_manager=None):
         """Show current login information in sidebar"""
         if self.is_authenticated():
+            # Get name from config file for accuracy
+            username = st.session_state.get('username')
             name = st.session_state.get('name', 'User')
+
+            # Try to get the actual name from config
+            try:
+                import yaml
+                from pathlib import Path
+                config_path = Path("config/auth_config.yaml")
+                with open(config_path) as file:
+                    config = yaml.load(file, yaml.SafeLoader)
+                user_data = config['credentials']['usernames'].get(username, {})
+                actual_name = user_data.get('name', name)
+                name = actual_name
+            except:
+                pass  # Fallback to session state name
+
             st.sidebar.success(f'Welcome **{name}**!')
 
             # Logout button
-            if st.sidebar.button('🚪 Logout'):
-                self.logout()
-                st.rerun()
+            st.markdown("---")
+            if st.sidebar.button('🚪 Logout', key='logout_button', help='Click to logout and save your data', use_container_width=True):
+                try:
+                    # Save data first
+                    if session_manager and data_manager:
+                        with st.spinner("💾 Saving your data..."):
+                            session_manager.sync_user_data(data_manager)
+
+                    # Clear user session data
+                    if session_manager:
+                        session_manager.clear_user_session()
+
+                    # Clear all session state variables
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+
+                    # Force rerun to show landing page
+                    st.success("✅ Logged out successfully!")
+                    st.rerun()
+
+                except Exception as e:
+                    st.sidebar.error(f"❌ Logout error: {str(e)}")
+                    # Emergency logout - clear everything
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.rerun()
 
             # User management options
             with st.sidebar.expander("👤 Account Settings"):

@@ -250,7 +250,7 @@ class SettingsManager:
                 }
 
                 st.session_state.portfolio_settings.update(updated_settings)
-                self.session_manager.sync_user_data()
+                self.session_manager.sync_user_data(self.data_manager)
 
                 st.success("✅ Portfolio settings saved successfully!")
 
@@ -262,8 +262,10 @@ class SettingsManager:
             else:
                 st.info("Enable fund tracking and add some portfolio holdings to see performance metrics.")
 
-            # Reset option
+            # Reset options
             st.write("**Reset Options**")
+
+            # Reset initial fund to current portfolio value
             if st.button("🔄 Reset to Current Portfolio Value", help="Set initial fund to current portfolio value"):
                 if st.session_state.portfolio_items:
                     current_value = sum(item.current_value for item in st.session_state.portfolio_items.values())
@@ -273,6 +275,26 @@ class SettingsManager:
                     st.rerun()
                 else:
                     st.warning("No portfolio holdings found to calculate current value")
+
+            # Reset all transactions - DANGEROUS operation
+            st.markdown("---")
+            st.write("**⚠️ Danger Zone**")
+            st.warning("The following action will permanently delete all your transaction history and portfolio holdings. This cannot be undone!")
+
+            # Confirmation checkbox
+            confirm_reset = st.checkbox(
+                "I understand this will permanently delete ALL transactions and portfolio data",
+                help="Check this box to enable the reset button"
+            )
+
+            # Reset button with confirmation
+            if st.button(
+                "🗑️ Reset All Transactions",
+                type="secondary",
+                disabled=not confirm_reset,
+                help="Permanently delete all transactions and portfolio holdings"
+            ):
+                self._reset_all_transactions()
 
     def _render_portfolio_performance(self, initial_fund):
         """Render portfolio performance metrics"""
@@ -450,3 +472,35 @@ class SettingsManager:
     def _migrate_to_redis(self):
         """Migrate data to Redis"""
         st.info("🗄️ Redis migration feature coming soon!")
+
+    def _reset_all_transactions(self):
+        """Reset all transactions and portfolio data"""
+        try:
+            with st.spinner("Resetting all transactions and portfolio data..."):
+                # Call data manager to reset transactions
+                success = self.data_manager.reset_user_transactions()
+
+                if success:
+                    # Clear session state
+                    st.session_state.transactions = []
+                    st.session_state.portfolio_items = {}
+
+                    # Optionally reset cash balance to initial fund
+                    if 'portfolio_settings' in st.session_state:
+                        initial_fund = st.session_state.portfolio_settings.get('initial_fund', 100000.0)
+                        st.session_state.cash_balance = initial_fund
+
+                    # Sync with storage
+                    self.session_manager.sync_user_data(self.data_manager)
+
+                    st.success("✅ All transactions and portfolio data have been reset successfully!")
+                    st.info("Your cash balance has been reset to your initial fund amount.")
+
+                    # Force page refresh to show updated data
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to reset transactions. Please try again or contact support.")
+
+        except Exception as e:
+            st.error(f"❌ Error resetting transactions: {str(e)}")
+            print(f"Reset transactions error: {e}")

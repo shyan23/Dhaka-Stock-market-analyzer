@@ -5,27 +5,32 @@ from typing import List, Optional
 from src.models.portfolio import Transaction, TransactionType, PortfolioItem
 from src.services.dse_api import DSEAPIService
 from src.services.data_manager import DataManager
+from src.ui.components.reset_component import create_reset_component
 
 class TransactionsUI:
     def __init__(self, dse_api: DSEAPIService, data_manager: DataManager):
         self.dse_api = dse_api
         self.data_manager = data_manager
+        self.reset_component = create_reset_component(data_manager)
     
     def render(self):
         """Render the transactions page"""
         st.title("💹 Transaction Management")
         
         # Tabs for different transaction views
-        tab1, tab2, tab3 = st.tabs(["➕ New Transaction", "📊 Quick Trade", "📋 Transaction Log"])
-        
+        tab1, tab2, tab3, tab4 = st.tabs(["➕ New Transaction", "📊 Quick Trade", "📋 Transaction Log", "🗑️ Reset Data"])
+
         with tab1:
             self._render_new_transaction()
-        
+
         with tab2:
             self._render_quick_trade()
-        
+
         with tab3:
             self._render_transaction_log()
+
+        with tab4:
+            self._render_reset_tab()
     
     def _render_new_transaction(self):
         """Render new transaction form"""
@@ -608,3 +613,61 @@ class TransactionsUI:
         
         except Exception as e:
             st.error(f"Error deleting transaction: {e}")
+
+    def _render_reset_tab(self):
+        """Render the reset data tab"""
+        st.subheader("🗑️ Reset Transaction Data")
+
+        # Show current transaction summary
+        self._show_transaction_summary()
+
+        # Render the reset component
+        self.reset_component.render(
+            title="Reset All Transaction Data",
+            location="transactions",
+            compact=False,
+            button_key="transactions_reset"
+        )
+
+    def _show_transaction_summary(self):
+        """Show summary of current transaction data that will be reset"""
+        st.info("📊 **Current Transaction Summary**")
+
+        transactions = st.session_state.get('transactions', [])
+        portfolio_items = st.session_state.get('portfolio_items', {})
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Total Transactions", len(transactions))
+
+        with col2:
+            buy_transactions = len([t for t in transactions if t.transaction_type == TransactionType.BUY])
+            st.metric("Buy Orders", buy_transactions)
+
+        with col3:
+            sell_transactions = len([t for t in transactions if t.transaction_type == TransactionType.SELL])
+            st.metric("Sell Orders", sell_transactions)
+
+        with col4:
+            active_holdings = len([item for item in portfolio_items.values() if item.quantity > 0])
+            st.metric("Active Holdings", active_holdings)
+
+        # Show total investment amounts
+        if transactions:
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                total_buy_amount = sum(t.total_amount for t in transactions if t.transaction_type == TransactionType.BUY)
+                st.metric("Total Buy Amount", f"৳{total_buy_amount:,.2f}")
+
+            with col2:
+                total_sell_amount = sum(t.total_amount for t in transactions if t.transaction_type == TransactionType.SELL)
+                st.metric("Total Sell Amount", f"৳{total_sell_amount:,.2f}")
+
+            with col3:
+                net_investment = total_buy_amount - total_sell_amount
+                st.metric("Net Investment", f"৳{net_investment:,.2f}")
+
+        else:
+            st.info("No transactions found to display summary.")

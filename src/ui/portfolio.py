@@ -8,11 +8,15 @@ import numpy as np
 from src.models.portfolio import PortfolioItem, Transaction, TransactionType
 from src.services.dse_api import DSEAPIService
 from src.services.data_manager import DataManager
+from src.ui.components.reset_component import create_reset_component
+from src.ui.components.time_range_selector import create_time_range_selector
 
 class PortfolioUI:
     def __init__(self, dse_api: DSEAPIService, data_manager: DataManager):
         self.dse_api = dse_api
         self.data_manager = data_manager
+        self.reset_component = create_reset_component(data_manager)
+        self.time_range_selector = create_time_range_selector(default_range="1M")
     
     def render(self):
         """Render the portfolio management page"""
@@ -24,19 +28,22 @@ class PortfolioUI:
         st.markdown("---")
         
         # Tabs for different portfolio views
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Holdings", "📈 Performance", "💰 P&L Analysis", "📋 Transaction History"])
-        
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Holdings", "📈 Performance", "💰 P&L Analysis", "📋 Transaction History", "🗑️ Reset Data"])
+
         with tab1:
             self._render_holdings_view()
-        
+
         with tab2:
             self._render_performance_view()
-        
+
         with tab3:
             self._render_pnl_analysis()
-        
+
         with tab4:
             self._render_transaction_history()
+
+        with tab5:
+            self._render_reset_tab()
     
     def _render_portfolio_overview(self):
         """Render portfolio overview cards"""
@@ -174,10 +181,17 @@ class PortfolioUI:
     def _render_performance_view(self):
         """Render portfolio performance charts"""
         st.subheader("📈 Portfolio Performance")
-        
+
         try:
+            # Time range selector
+            start_date, end_date = self.time_range_selector.render(
+                key_prefix="portfolio_performance",
+                show_custom=True,
+                compact=False
+            )
+
             # Generate sample performance data (replace with actual data from data manager)
-            dates = pd.date_range(start=datetime.now() - timedelta(days=30), end=datetime.now(), freq='D')
+            dates = pd.date_range(start=start_date, end=end_date, freq='D')
             
             # Simulate portfolio value progression
             portfolio_values = []
@@ -473,3 +487,37 @@ class PortfolioUI:
         
         except Exception as e:
             st.error(f"Error rendering transaction history: {e}")
+
+    def _render_reset_tab(self):
+        """Render the reset data tab"""
+        st.subheader("🗑️ Reset Portfolio Data")
+
+        # Show current data summary
+        self._show_data_summary()
+
+        # Render the reset component
+        self.reset_component.render(
+            title="Reset All Portfolio Data",
+            location="portfolio",
+            compact=False,
+            button_key="portfolio_reset"
+        )
+
+    def _show_data_summary(self):
+        """Show summary of current data that will be reset"""
+        st.info("📊 **Current Data Summary**")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            transaction_count = len(st.session_state.get('transactions', []))
+            st.metric("Total Transactions", transaction_count)
+
+        with col2:
+            portfolio_items = st.session_state.get('portfolio_items', {})
+            holdings_count = len([item for item in portfolio_items.values() if item.quantity > 0])
+            st.metric("Active Holdings", holdings_count)
+
+        with col3:
+            total_value = sum(item.current_value for item in portfolio_items.values() if item.quantity > 0)
+            st.metric("Portfolio Value", f"৳{total_value:,.2f}")

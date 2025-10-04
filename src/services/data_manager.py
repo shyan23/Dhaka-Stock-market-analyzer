@@ -393,6 +393,10 @@ class DataManager:
             print(f"Error loading selected stocks: {e}")
             return []
 
+    def get_selected_stocks(self) -> List[str]:
+        """Get user's selected stocks - alias for load_user_selected_stocks"""
+        return self.load_user_selected_stocks()
+
     def save_user_cash_balance(self, cash_balance: float) -> bool:
         """Save user's cash balance to Redis"""
         if self.app_mode != 'redis' or not self.redis_client:
@@ -452,6 +456,54 @@ class DataManager:
         except Exception as e:
             print(f"Error loading portfolio settings: {e}")
             return {'initial_fund': 100000.0}
+
+    def reset_user_transactions(self) -> bool:
+        """Reset (clear) all user transactions and portfolio items"""
+        try:
+            if self.app_mode == 'redis':
+                return self._reset_transactions_redis()
+            else:
+                return self._reset_transactions_sheets()
+        except Exception as e:
+            print(f"Error resetting transactions: {e}")
+            return False
+
+    def _reset_transactions_redis(self) -> bool:
+        """Reset transactions in Redis"""
+        if not self.redis_client:
+            return False
+
+        try:
+            user_prefix = self._get_user_prefix()
+
+            # Clear transactions
+            transactions_key = f"{user_prefix}transactions"
+            self.redis_client.delete(transactions_key)
+
+            # Clear portfolio items
+            portfolio_key = f"{user_prefix}portfolio_items"
+            self.redis_client.delete(portfolio_key)
+
+            # Reset cash balance to initial amount (optional - preserve current setting)
+            # cash_key = f"{user_prefix}cash_balance"
+            # self.redis_client.delete(cash_key)
+
+            return True
+        except Exception as e:
+            print(f"Error resetting transactions in Redis: {e}")
+            return False
+
+    def _reset_transactions_sheets(self) -> bool:
+        """Reset transactions in Google Sheets"""
+        if not self.sheets_service:
+            return False
+
+        try:
+            # Use Google Sheets service to clear transaction data
+            return self.sheets_service.reset_transactions()
+        except Exception as e:
+            print(f"Error resetting transactions in Google Sheets: {e}")
+            return False
 
     def test_redis_connection(self) -> Dict[str, Any]:
         """Test Redis connection and return status"""

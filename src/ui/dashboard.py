@@ -9,11 +9,13 @@ from src.models.stock import Stock, StockPriceHistory
 from src.models.portfolio import PortfolioItem, PortfolioSnapshot
 from src.services.dse_api import DSEAPIService
 from src.services.data_manager import DataManager
+from src.ui.components.time_range_selector import create_time_range_selector
 
 class DashboardUI:
     def __init__(self, dse_api: DSEAPIService, data_manager: DataManager):
         self.dse_api = dse_api
         self.data_manager = data_manager
+        self.time_range_selector = create_time_range_selector(default_range="1M")
     
     def render(self):
         """Render the main dashboard"""
@@ -153,21 +155,34 @@ class DashboardUI:
             st.info("Please select stocks to display charts")
             return
         
-        # Chart type selection
-        chart_type = st.selectbox(
-            "Chart Type:",
-            ["Line Chart", "Candlestick Chart", "Bar Chart"],
-            key="price_chart_type"
-        )
-        
-        # Time period selection
-        days = st.slider("Time Period (days)", 1, 90, 30)
+        # Chart configuration
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Chart type selection
+            chart_type = st.selectbox(
+                "Chart Type:",
+                ["Line Chart", "Candlestick Chart", "Bar Chart"],
+                key="price_chart_type"
+            )
+
+        with col2:
+            # Time range selection with our dynamic component
+            start_date, end_date = self.time_range_selector.render(
+                key_prefix="dashboard_charts",
+                show_custom=True,
+                compact=True
+            )
         
         # Generate charts
         for symbol in selected_for_chart:
             try:
                 st.subheader(f"{symbol} - Price Chart")
                 
+                # Calculate days from date range
+                date_diff = end_date - start_date
+                days = max(1, date_diff.days)
+
                 # Get historical data
                 historical_data = self.dse_api.get_stock_historical_data(symbol, days)
                 

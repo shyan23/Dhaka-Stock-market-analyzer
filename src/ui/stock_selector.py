@@ -188,8 +188,8 @@ class StockSelectorUI:
             st.session_state.selected_stocks.append(symbol)
 
             # Save to persistent storage
-            if 'app_instance' in st.session_state:
-                st.session_state.app_instance.save_selected_stocks_update()
+            # Save to persistent storage
+            self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
 
             display_name = f"{symbol} ({name})" if name and name != symbol else symbol
             st.success(f"✅ Added {display_name} to tracking list!")
@@ -404,8 +404,9 @@ class StockSelectorUI:
                                             added_count += 1
 
                                     # Save to persistent storage if any stocks were added
-                                    if added_count > 0 and 'app_instance' in st.session_state:
-                                        st.session_state.app_instance.save_selected_stocks_update()
+                                    if added_count > 0:
+                                        # Save to persistent storage
+                                        self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
                                     
                                     if added_count > 0:
                                         st.success(f"Added {added_count} stocks to tracking!")
