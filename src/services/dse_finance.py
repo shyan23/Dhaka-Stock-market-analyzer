@@ -62,30 +62,54 @@ class DSEFinanceService:
             if not line.strip():
                 continue
 
-            # Parse tab-separated format: Symbol \t Price
+            # Parse tab-separated format: Symbol \t LTP \t High \t Low \t YCP \t Change \t Trade \t Value(mn) \t Volume
             if '\t' in line:
                 parts = line.split('\t')
-                if len(parts) >= 2:
+                if len(parts) >= 9:
                     try:
                         symbol = parts[0].strip()
-                        price_str = parts[1].strip()
+                        ltp = float(parts[1].strip()) if parts[1].strip() else 0.0
+                        high = float(parts[2].strip()) if parts[2].strip() else ltp
+                        low = float(parts[3].strip()) if parts[3].strip() else ltp
+                        ycp = float(parts[4].strip()) if parts[4].strip() else ltp
+                        change = float(parts[5].strip()) if parts[5].strip() else 0.0
+                        trade = int(parts[6].strip()) if parts[6].strip() else 0
+                        value_mn = float(parts[7].strip()) if parts[7].strip() else 0.0
+                        volume = int(parts[8].strip()) if parts[8].strip() else 0
 
-                        if symbol and price_str:
-                            price = float(price_str)
+                        if symbol:
                             stocks[symbol] = {
                                 'symbol': symbol,
-                                'ltp': price,
-                                'high': price,  # Use current price as placeholder
-                                'low': price,   # Use current price as placeholder
-                                'close_p': price,
-                                'ycp': price,   # Yesterday's close (placeholder)
-                                'change': 0.0,  # Calculate if we had ycp
-                                'trade': 0,     # Not available in this format
-                                'value_mn': 0.0,
-                                'volume': 0
+                                'ltp': ltp,
+                                'high': high,
+                                'low': low,
+                                'close_p': ltp,
+                                'ycp': ycp,
+                                'change': change,
+                                'trade': trade,
+                                'value_mn': value_mn,
+                                'volume': volume
                             }
-                    except (ValueError, IndexError):
-                        continue
+                    except (ValueError, IndexError) as e:
+                        # Try fallback with minimal fields
+                        try:
+                            symbol = parts[0].strip()
+                            price = float(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 0.0
+                            if symbol and price:
+                                stocks[symbol] = {
+                                    'symbol': symbol,
+                                    'ltp': price,
+                                    'high': price,
+                                    'low': price,
+                                    'close_p': price,
+                                    'ycp': price,
+                                    'change': 0.0,
+                                    'trade': 0,
+                                    'value_mn': 0.0,
+                                    'volume': 0
+                                }
+                        except:
+                            continue
         return stocks
 
     def _get_cached_quotes(self) -> Dict[str, Dict]:

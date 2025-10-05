@@ -21,8 +21,6 @@ class DashboardUI:
         """Render the main dashboard"""
         st.title("📈 Portfolio Dashboard")
 
-        # Market Status Bar
-        self._render_market_status_bar()
 
         # Check if user has selected stocks
         if not st.session_state.selected_stocks:
@@ -143,18 +141,53 @@ class DashboardUI:
     def _render_price_charts(self):
         """Render price movement charts"""
         st.subheader("📊 Stock Price Movements")
-        
-        # Select stocks to display
-        selected_for_chart = st.multiselect(
-            "Select stocks to display in charts:",
-            options=st.session_state.selected_stocks,
-            default=st.session_state.selected_stocks[:5]  # Show first 5 by default
-        )
-        
-        if not selected_for_chart:
-            st.info("Please select stocks to display charts")
+
+        # Store initial list for comparison
+        initial_stocks = st.session_state.selected_stocks.copy()
+
+        # Header row with stock management
+        col_select, col_manage = st.columns([3, 1])
+
+        with col_select:
+            # Create a custom multiselect that saves changes
+            # Users can remove stocks using the X button in multiselect
+            new_selected_stocks = st.multiselect(
+                "Select stocks to remove from tracking (use × button):",
+                options=st.session_state.selected_stocks,
+                default=st.session_state.selected_stocks,
+                help="Click × next to a stock to remove it from tracking permanently",
+                key="stock_multiselect_tracker"
+            )
+
+            # Detect if stocks were removed via the X button
+            if len(new_selected_stocks) < len(initial_stocks):
+                # Stocks were removed, update the session state and save
+                st.session_state.selected_stocks = new_selected_stocks
+                self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
+                removed_count = len(initial_stocks) - len(new_selected_stocks)
+                st.success(f"✅ Removed {removed_count} stock(s) from tracking!")
+                st.rerun()
+
+        with col_manage:
+            st.write("")  # Spacing
+            st.write("")  # Spacing
+            # Reset stocks button - clears all tracked stocks
+            if st.button("🔄 RESET STOCKS", key="reset_all_stocks", type="secondary", help="Clear all tracked stocks"):
+                if st.button("⚠️ Confirm Reset", key="confirm_reset_stocks"):
+                    st.session_state.selected_stocks = []
+                    # Save to persistent storage
+                    self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
+                    st.success("✅ All stocks cleared from tracking!")
+                    st.rerun()
+
+        # For displaying charts, use all tracked stocks (or subset based on user preference)
+        if not st.session_state.selected_stocks:
+            st.info("No stocks in tracking list. Go to Stock Selector to add stocks.")
             return
-        
+
+        # Show first 5 stocks in charts by default
+        selected_for_chart = st.session_state.selected_stocks[:5]
+
         # Chart configuration
         col1, col2 = st.columns(2)
 
@@ -178,14 +211,14 @@ class DashboardUI:
         for symbol in selected_for_chart:
             try:
                 st.subheader(f"{symbol} - Price Chart")
-                
+
                 # Calculate days from date range
                 date_diff = end_date - start_date
                 days = max(1, date_diff.days)
 
                 # Get historical data
                 historical_data = self.dse_api.get_stock_historical_data(symbol, days)
-                
+
                 if historical_data:
                     if chart_type == "Line Chart":
                         self._create_line_chart(symbol, historical_data)
@@ -195,7 +228,7 @@ class DashboardUI:
                         self._create_bar_chart(symbol, historical_data)
                 else:
                     st.warning(f"No historical data available for {symbol}")
-            
+
             except Exception as e:
                 st.error(f"Error creating chart for {symbol}: {e}")
     
@@ -454,38 +487,6 @@ class DashboardUI:
         except Exception as e:
             st.error(f"Error rendering portfolio performance: {e}")
 
-    def _render_market_status_bar(self):
-        """Render market status information bar"""
-        try:
-            from src.services.market_status import MarketStatusService
-            market_service = MarketStatusService()
-            market_status = market_service.get_market_status()
-
-            # Create a colored status bar
-            status_color = "#00D100" if market_status['is_open'] else "#FF4B4B"
-            status_icon = "🟢" if market_status['is_open'] else "🔴"
-
-            # Display market status in a container
-            with st.container():
-                col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
-
-                with col1:
-                    st.markdown(f"<div style='background-color: {status_color}; color: white; padding: 10px; border-radius: 5px; text-align: center;'>"
-                               f"<b>{status_icon} {market_status['status']}</b></div>", unsafe_allow_html=True)
-
-                with col2:
-                    st.info(f"⏰ **Current Time:** {market_status['current_time']}")
-
-                with col3:
-                    st.info(f"📅 **{market_status['next_change']}** in {market_status['time_until_change']}")
-
-                with col4:
-                    st.info(f"🕐 **Market Hours:** {market_status['market_hours']}")
-
-            st.markdown("---")
-
-        except Exception as e:
-            st.error(f"Error loading market status: {e}")
 
     def _render_holdings_distribution(self):
         """Render holdings distribution pie chart"""
@@ -544,50 +545,117 @@ class DashboardUI:
             st.error(f"Error rendering holdings distribution: {e}")
     
     def _render_stock_details(self):
-        """Render detailed stock information table"""
+        """Render detailed stock information"""
         st.subheader("📋 Stock Details")
-        
+
         try:
-            # Get current stock data
-            stocks_data = []
-            
-            for symbol in st.session_state.selected_stocks:
-                stock = self.dse_api.get_stock_by_symbol(symbol)
-                if stock:
-                    # Get portfolio info
-                    portfolio_item = st.session_state.portfolio_items.get(symbol)
-                    quantity = portfolio_item.quantity if portfolio_item else 0
-                    
-                    stocks_data.append({
-                        'Symbol': stock.symbol,
-                        'Company Name': stock.name,
-                        'LTP': f"৳{stock.current_price:.2f}",
-                        'Previous Close': f"৳{stock.previous_close:.2f}",
-                        'Change': f"{stock.price_change:+.2f}",
-                        'Change %': f"{stock.price_change_percent:+.2f}%",
-                        'High': f"৳{stock.high:.2f}" if stock.high else 'N/A',
-                        'Low': f"৳{stock.low:.2f}" if stock.low else 'N/A',
-                        'Volume': f"{stock.volume:,}",
-                        'Holdings': quantity,
-                        'Holdings Value': f"৳{quantity * stock.current_price:,.2f}",
-                        'Last Updated': stock.last_updated.strftime('%H:%M:%S') if stock.last_updated else 'N/A'
-                    })
-            
-            if stocks_data:
-                df = pd.DataFrame(stocks_data)
-                
-                # Color code based on change
-                def color_change(val):
-                    if '+' in str(val):
-                        return 'color: green'
-                    elif '-' in str(val):
-                        return 'color: red'
-                    return ''
-                
-                styled_df = df.style.applymap(color_change, subset=['Change', 'Change %'])
-                st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            else:
-                st.warning("No stock data available")
-        
+            self._render_stock_cards()
         except Exception as e:
             st.error(f"Error rendering stock details: {e}")
+
+    def _render_stock_cards(self):
+        """Render stocks as info cards"""
+        if not st.session_state.selected_stocks:
+            st.info("No stocks selected for tracking")
+            return
+
+        # Display stocks in rows of 3
+        stocks_per_row = 3
+        for i in range(0, len(st.session_state.selected_stocks), stocks_per_row):
+            cols = st.columns(stocks_per_row)
+            for j in range(stocks_per_row):
+                if i + j < len(st.session_state.selected_stocks):
+                    symbol = st.session_state.selected_stocks[i + j]
+                    with cols[j]:
+                        try:
+                            stock = self.dse_api.get_stock_by_symbol(symbol)
+                            if stock:
+                                # Get portfolio info
+                                portfolio_item = st.session_state.portfolio_items.get(symbol)
+                                quantity = portfolio_item.quantity if portfolio_item else 0
+
+                                # Determine color based on change
+                                change_color = "#00D100" if stock.price_change >= 0 else "#FF4B4B"
+                                border_color = "#00D100" if stock.price_change >= 0 else "#FF4B4B"
+
+                                # Card with stock info
+                                st.markdown(f"""
+                                <div style="border-left: 4px solid {border_color}; padding: 12px; background-color: #f9f9f9; border-radius: 5px; margin-bottom: 10px;">
+                                    <h4 style="margin: 0; color: #333;">{symbol}</h4>
+                                    <p style="margin: 5px 0; color: #666; font-size: 0.9em;">{stock.name[:30]}...</p>
+                                    <div style="margin: 10px 0;">
+                                        <span style="font-size: 1.5em; font-weight: bold;">৳{stock.current_price:.2f}</span>
+                                        <span style="color: {change_color}; margin-left: 10px;">
+                                            {stock.price_change:+.2f} ({stock.price_change_percent:+.2f}%)
+                                        </span>
+                                    </div>
+                                    <div style="font-size: 0.85em; color: #666;">
+                                        <div>High: ৳{stock.high:.2f if stock.high else 0:.2f} | Low: ৳{stock.low:.2f if stock.low else 0:.2f}</div>
+                                        <div>Volume: {stock.volume:,}</div>
+                                        {f'<div style="color: #0066cc;">Holdings: {quantity:,} shares (৳{quantity * stock.current_price:,.2f})</div>' if quantity > 0 else ''}
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                st.error(f"❌ Unable to fetch data for {symbol}")
+                        except Exception as e:
+                            st.error(f"Error loading {symbol}: {str(e)[:50]}")
+
+    def _render_stock_table(self):
+        """Render stocks in traditional table format"""
+        stocks_data = []
+
+        for symbol in st.session_state.selected_stocks:
+            stock = self.dse_api.get_stock_by_symbol(symbol)
+            if stock:
+                # Get portfolio info
+                portfolio_item = st.session_state.portfolio_items.get(symbol)
+                quantity = portfolio_item.quantity if portfolio_item else 0
+
+                stocks_data.append({
+                    'Symbol': stock.symbol,
+                    'Company Name': stock.name,
+                    'LTP': f"৳{stock.current_price:.2f}",
+                    'Previous Close': f"৳{stock.previous_close:.2f}",
+                    'Change': f"{stock.price_change:+.2f}",
+                    'Change %': f"{stock.price_change_percent:+.2f}%",
+                    'High': f"৳{stock.high:.2f}" if stock.high else 'N/A',
+                    'Low': f"৳{stock.low:.2f}" if stock.low else 'N/A',
+                    'Volume': f"{stock.volume:,}",
+                    'Holdings': quantity,
+                    'Holdings Value': f"৳{quantity * stock.current_price:,.2f}",
+                    'Last Updated': stock.last_updated.strftime('%H:%M:%S') if stock.last_updated else 'N/A'
+                })
+
+        if stocks_data:
+            df = pd.DataFrame(stocks_data)
+
+            # Color code based on change
+            def color_change(val):
+                if '+' in str(val):
+                    return 'color: green'
+                elif '-' in str(val):
+                    return 'color: red'
+                return ''
+
+            styled_df = df.style.applymap(color_change, subset=['Change', 'Change %'])
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+            # Bulk remove option for table view
+            st.markdown("---")
+            remove_stocks = st.multiselect(
+                "🗑️ Select stocks to remove from tracking:",
+                options=st.session_state.selected_stocks,
+                key="dashboard_bulk_remove"
+            )
+            if remove_stocks:
+                if st.button("🗑️ Remove Selected Stocks", type="primary"):
+                    for symbol in remove_stocks:
+                        if symbol in st.session_state.selected_stocks:
+                            st.session_state.selected_stocks.remove(symbol)
+                    # Save to persistent storage
+                    self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
+                    st.success(f"✅ Removed {len(remove_stocks)} stock(s) from tracking!")
+                    st.rerun()
+        else:
+            st.warning("No stock data available")

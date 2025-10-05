@@ -128,11 +128,13 @@ class PriceTrackerUI:
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 gainers = len(df[df['Change %'] > 0])
-                st.metric("Gainers", gainers, f"{gainers/len(df)*100:.1f}%")
+                gainers_pct = (gainers/len(df)*100) if len(df) > 0 else 0
+                st.metric("Gainers", gainers, f"{gainers_pct:.1f}%")
 
             with col2:
                 losers = len(df[df['Change %'] < 0])
-                st.metric("Losers", losers, f"{losers/len(df)*100:.1f}%")
+                losers_pct = (losers/len(df)*100) if len(df) > 0 else 0
+                st.metric("Losers", losers, f"{losers_pct:.1f}%")
 
             with col3:
                 avg_change = df['Change %'].mean()

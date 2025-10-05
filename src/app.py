@@ -143,6 +143,9 @@ class StockMarketApp:
 
     def _render_main_app(self):
         """Render the main application interface"""
+        # Top bar with user info
+        self._render_top_bar()
+
         # Sidebar with navigation
         self._render_sidebar()
 
@@ -150,32 +153,74 @@ class StockMarketApp:
         page = st.session_state.get('current_page', 'Dashboard')
         self._render_page_content(page)
 
+    def _render_top_bar(self):
+        """Render beautiful top bar with user info"""
+        # Get user info
+        username = st.session_state.get('username', 'User')
+        name = st.session_state.get('name', 'User')
+
+        # Try to get actual name from config
+        try:
+            import yaml
+            from pathlib import Path
+            config_path = Path("config/auth_config.yaml")
+            with open(config_path) as file:
+                config = yaml.load(file, yaml.SafeLoader)
+            user_data = config['credentials']['usernames'].get(username, {})
+            name = user_data.get('name', name)
+        except:
+            pass
+
+        # Create top bar with custom CSS
+        st.markdown("""
+        <style>
+        .top-bar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Top bar layout
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            st.markdown("# 📈 Stock Market Analyzer")
+
+        with col2:
+            st.markdown(f"### 👤 Welcome, {name}")
+
+        st.markdown("---")
+
     def _render_sidebar(self):
         """Render the application sidebar"""
         with st.sidebar:
-            st.title("📈 Stock Market Analyzer")
-
-            # Authentication info
-            self.auth_service.show_login_info(self.session_manager, self.data_manager)
-
-            # Storage mode info
-            mode_display = "📈 Google Sheets" if self.config.APP_MODE == "google_sheets" else "🗄️ Redis"
-            st.info(f"Storage: {mode_display}")
-
-            st.markdown("---")
+            st.title("🧭 Navigation")
 
             # Navigation
             page = st.selectbox(
-                "Navigate",
+                "Go to:",
                 ["Dashboard", "Profile", "Stock Selector", "Portfolio", "Transactions", "Price Tracker", "DSE Finance", "Settings"],
                 index=0,
-                key="current_page"
+                key="current_page",
+                label_visibility="collapsed"
             )
+
+            st.markdown("---")
+
+            # Logout button
+            if st.button("🚪 Logout", key="logout_btn", use_container_width=True, type="primary"):
+                self.auth_service.logout()
 
             st.markdown("---")
 
             # User summary
             self._render_user_summary()
+
+            st.markdown("---")
 
             # Quick stats
             self._render_quick_stats()

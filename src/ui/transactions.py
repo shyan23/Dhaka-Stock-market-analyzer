@@ -50,6 +50,7 @@ class TransactionsUI:
         with col_cash3:
             if st.button("📊 Cash History", key="cash_history_btn"):
                 st.session_state.show_cash_history = True
+                st.rerun()
 
         # Deposit cash form
         if st.session_state.get('show_deposit_form', False):
@@ -85,6 +86,61 @@ class TransactionsUI:
                     if st.form_submit_button("❌ Cancel"):
                         st.session_state.show_deposit_form = False
                         st.rerun()
+
+        # Cash history display
+        if st.session_state.get('show_cash_history', False):
+            st.markdown("---")
+            st.subheader("💰 Cash Transaction History")
+
+            cash_transactions = st.session_state.get('cash_transactions', [])
+
+            if cash_transactions:
+                # Create DataFrame for display
+                cash_data = []
+                for ct in cash_transactions:
+                    cash_data.append({
+                        'Date': ct['timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
+                        'Type': ct['type'],
+                        'Amount': f"৳{ct['amount']:+,.2f}",
+                        'Balance After': f"৳{ct['balance']:,.2f}",
+                        'Note': ct.get('note', ''),
+                        'Brokerage Fee': f"৳{ct.get('brokerage_fee', 0.0):.2f}" if 'brokerage_fee' in ct else 'N/A'
+                    })
+
+                import pandas as pd
+                df_cash = pd.DataFrame(cash_data)
+
+                # Color code based on type
+                def color_transaction_type(val):
+                    if val == 'DEPOSIT':
+                        return 'color: green'
+                    elif val in ['BUY', 'SELL']:
+                        return 'color: blue' if val == 'BUY' else 'color: orange'
+                    return ''
+
+                styled_df = df_cash.style.applymap(color_transaction_type, subset=['Type'])
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+                # Summary metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    total_deposits = sum(ct['amount'] for ct in cash_transactions if ct['type'] == 'DEPOSIT')
+                    st.metric("Total Deposits", f"৳{total_deposits:,.2f}")
+                with col2:
+                    total_buys = sum(-ct['amount'] for ct in cash_transactions if ct['type'] == 'BUY')
+                    st.metric("Total Spent (Buys)", f"৳{total_buys:,.2f}")
+                with col3:
+                    total_sells = sum(ct['amount'] for ct in cash_transactions if ct['type'] == 'SELL')
+                    st.metric("Total Received (Sells)", f"৳{total_sells:,.2f}")
+
+                if st.button("❌ Close History"):
+                    st.session_state.show_cash_history = False
+                    st.rerun()
+            else:
+                st.info("No cash transactions recorded yet.")
+                if st.button("❌ Close"):
+                    st.session_state.show_cash_history = False
+                    st.rerun()
 
         # Price suggestion buttons (outside form)
         selected_symbol = st.session_state.get('temp_transaction_symbol', '')

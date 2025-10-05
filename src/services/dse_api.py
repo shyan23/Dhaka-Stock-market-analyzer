@@ -47,42 +47,94 @@ class DSEAPIService:
             return stocks
 
         lines = content.split('\n')
-        for line in lines[2:]:  # Skip header lines
+        for line in lines[3:]:  # Skip first 3 header lines
             line = line.strip()
             if line:
-                # Handle both tab and space-separated formats
+                # Handle tab-separated format: Symbol \t LTP \t High \t Low \t YCP \t Change \t Trade \t Value(mn) \t Volume
                 if '\t' in line:
                     parts = line.split('\t')
-                    symbol = parts[0].strip()
-                    # Find the first non-empty part after symbol for price
-                    price_str = ''
-                    for part in parts[1:]:
-                        part = part.strip()
-                        if part:
-                            price_str = part
-                            break
+                    if len(parts) >= 9:
+                        try:
+                            symbol = parts[0].strip()
+                            ltp = float(parts[1].strip()) if parts[1].strip() else 0.0
+                            high = float(parts[2].strip()) if parts[2].strip() else ltp
+                            low = float(parts[3].strip()) if parts[3].strip() else ltp
+                            ycp = float(parts[4].strip()) if parts[4].strip() else ltp
+                            change = float(parts[5].strip()) if parts[5].strip() else 0.0
+                            trade = int(parts[6].strip()) if parts[6].strip() else 0
+                            value_mn = float(parts[7].strip()) if parts[7].strip() else 0.0
+                            volume = int(parts[8].strip()) if parts[8].strip() else 0
+
+                            if symbol and ltp > 0:
+                                stocks.append({
+                                    'symbol': symbol,
+                                    'trading_code': symbol,
+                                    'last_trade_price': ltp,
+                                    'previous_close': ycp,
+                                    'high': high,
+                                    'low': low,
+                                    'change': change,
+                                    'volume': volume,
+                                    'trades': trade,
+                                    'value_mn': value_mn,
+                                    'name': symbol
+                                })
+                        except (ValueError, IndexError):
+                            # Fallback: try minimal parsing
+                            try:
+                                symbol = parts[0].strip()
+                                price = float(parts[1].strip()) if parts[1].strip() else 0.0
+                                if symbol and price > 0:
+                                    stocks.append({
+                                        'symbol': symbol,
+                                        'trading_code': symbol,
+                                        'last_trade_price': price,
+                                        'previous_close': price,
+                                        'name': symbol
+                                    })
+                            except:
+                                continue
+                    else:
+                        # Handle minimal format
+                        try:
+                            symbol = parts[0].strip()
+                            price_str = ''
+                            for part in parts[1:]:
+                                part = part.strip()
+                                if part:
+                                    price_str = part
+                                    break
+                            if symbol and price_str:
+                                price = float(price_str)
+                                if price > 0:
+                                    stocks.append({
+                                        'symbol': symbol,
+                                        'trading_code': symbol,
+                                        'last_trade_price': price,
+                                        'previous_close': price,
+                                        'name': symbol
+                                    })
+                        except ValueError:
+                            continue
                 else:
                     # Fallback to space-based parsing
                     parts = line.split()
                     if len(parts) >= 2:
-                        symbol = parts[0].strip()
-                        price_str = parts[1].strip()
-                    else:
-                        continue
-
-                # Process the extracted symbol and price
-                if symbol and price_str:
-                    try:
-                        price = float(price_str)
-                        if price > 0:  # Only include stocks with positive prices
-                            stocks.append({
-                                'symbol': symbol,
-                                'trading_code': symbol,
-                                'last_trade_price': price,
-                                'name': symbol  # Using symbol as name for now
-                            })
-                    except ValueError:
-                        continue
+                        try:
+                            symbol = parts[0].strip()
+                            price_str = parts[1].strip()
+                            if symbol and price_str:
+                                price = float(price_str)
+                                if price > 0:
+                                    stocks.append({
+                                        'symbol': symbol,
+                                        'trading_code': symbol,
+                                        'last_trade_price': price,
+                                        'previous_close': price,
+                                        'name': symbol
+                                    })
+                        except ValueError:
+                            continue
 
         return stocks
 
@@ -106,10 +158,10 @@ class DSEAPIService:
                         symbol=item['symbol'],
                         name=item['name'],
                         current_price=item['last_trade_price'],
-                        previous_close=item['last_trade_price'],  # Using same as current for now
-                        volume=0,  # Not available in quotes.txt
-                        high=None,
-                        low=None,
+                        previous_close=item.get('previous_close', item['last_trade_price']),
+                        volume=item.get('volume', 0),
+                        high=item.get('high'),
+                        low=item.get('low'),
                         open_price=None,
                         last_updated=datetime.now()
                     )
@@ -441,10 +493,10 @@ class DSEAPIService:
                             symbol=item['symbol'],
                             name=item['name'],
                             current_price=item['last_trade_price'],
-                            previous_close=item['last_trade_price'],
-                            volume=0,
-                            high=None,
-                            low=None,
+                            previous_close=item.get('previous_close', item['last_trade_price']),
+                            volume=item.get('volume', 0),
+                            high=item.get('high'),
+                            low=item.get('low'),
                             open_price=None,
                             last_updated=datetime.now()
                         )

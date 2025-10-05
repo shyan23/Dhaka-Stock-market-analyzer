@@ -227,8 +227,8 @@ class StockSelectorUI:
                     if st.button("🗑️ Clear All", help="Remove all tracked stocks"):
                         if st.button("⚠️ Confirm Clear All", key="confirm_clear_all"):
                             st.session_state.selected_stocks = []
-                            if 'app_instance' in st.session_state:
-                                st.session_state.app_instance.save_selected_stocks_update()
+                            # Save to persistent storage
+                            self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
                             st.success("All stocks removed from tracking!")
                             st.rerun()
 
@@ -243,8 +243,8 @@ class StockSelectorUI:
                         for symbol in remove_symbols:
                             if symbol in st.session_state.selected_stocks:
                                 st.session_state.selected_stocks.remove(symbol)
-                        if 'app_instance' in st.session_state:
-                            st.session_state.app_instance.save_selected_stocks_update()
+                        # Save to persistent storage
+                        self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
                         st.success(f"Removed {len(remove_symbols)} stocks from tracking!")
                         st.rerun()
 
@@ -286,8 +286,8 @@ class StockSelectorUI:
                                 # Quick remove button
                                 if st.button("❌", key=f"remove_{symbol}", help=f"Remove {symbol}"):
                                     st.session_state.selected_stocks.remove(symbol)
-                                    if 'app_instance' in st.session_state:
-                                        st.session_state.app_instance.save_selected_stocks_update()
+                                    # Save to persistent storage
+                                    self.data_manager.save_user_selected_stocks(st.session_state.selected_stocks)
                                     st.success(f"Removed {symbol}!")
                                     st.rerun()
                             else:

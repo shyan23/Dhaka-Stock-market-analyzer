@@ -155,7 +155,8 @@ class PortfolioUI:
                 st.subheader("Holdings Distribution")
 
                 try:
-                    if len(df) > 0 and 'sort_value' in df.columns:
+                    if len(df) > 0:
+                        # Use the original sort_value column that was already created
                         fig = px.pie(
                             df,
                             values='sort_value',
@@ -169,8 +170,8 @@ class PortfolioUI:
                 except Exception as chart_error:
                     st.error(f"Error creating holdings chart: {chart_error}")
                     st.info("Chart data debugging:")
-                    st.write("DataFrame columns:", df.columns.tolist())
-                    st.write("DataFrame shape:", df.shape)
+                    st.write("DataFrame columns:", df.columns.tolist() if 'df' in locals() else "No DataFrame")
+                    st.write("DataFrame shape:", df.shape if 'df' in locals() else "No DataFrame")
             
             else:
                 st.info("No holdings found. Add some transactions to see your portfolio holdings.")
@@ -355,7 +356,8 @@ class PortfolioUI:
                 st.subheader("P&L Distribution")
 
                 try:
-                    if len(df) > 0 and 'sort_pnl' in df.columns:
+                    if len(df) > 0:
+                        # Use the original sort_pnl column that was already created
                         fig = go.Figure()
 
                         colors = ['green' if '+' in pnl else 'red' for pnl in df['Unrealized P&L']]
@@ -380,8 +382,8 @@ class PortfolioUI:
                 except Exception as chart_error:
                     st.error(f"Error creating P&L chart: {chart_error}")
                     st.info("Chart data debugging:")
-                    st.write("DataFrame columns:", df.columns.tolist())
-                    st.write("DataFrame shape:", df.shape)
+                    st.write("DataFrame columns:", df.columns.tolist() if 'df' in locals() else "No DataFrame")
+                    st.write("DataFrame shape:", df.shape if 'df' in locals() else "No DataFrame")
             
             else:
                 st.info("No holdings found for P&L analysis.")

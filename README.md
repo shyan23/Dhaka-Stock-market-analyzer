@@ -10,7 +10,7 @@ A comprehensive, professional-grade portfolio management and stock tracking appl
 
 ![Stock Market Analyzer Dashboard](https://via.placeholder.com/800x400/1f77b4/ffffff?text=Stock+Market+Analyzer+Dashboard)
 
----
+---`
 
 ## 🎯 **What This Project Does**
 

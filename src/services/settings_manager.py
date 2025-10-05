@@ -279,22 +279,40 @@ class SettingsManager:
             # Reset all transactions - DANGEROUS operation
             st.markdown("---")
             st.write("**⚠️ Danger Zone**")
-            st.warning("The following action will permanently delete all your transaction history and portfolio holdings. This cannot be undone!")
+            st.warning("The following actions will permanently delete your data. This cannot be undone!")
 
-            # Confirmation checkbox
-            confirm_reset = st.checkbox(
+            # Confirmation checkbox for transactions reset
+            confirm_reset_transactions = st.checkbox(
                 "I understand this will permanently delete ALL transactions and portfolio data",
-                help="Check this box to enable the reset button"
+                help="Check this box to enable the reset transactions button"
             )
 
-            # Reset button with confirmation
+            # Reset transactions button with confirmation
             if st.button(
                 "🗑️ Reset All Transactions",
                 type="secondary",
-                disabled=not confirm_reset,
+                disabled=not confirm_reset_transactions,
                 help="Permanently delete all transactions and portfolio holdings"
             ):
                 self._reset_all_transactions()
+
+            # Spacer
+            st.write("")
+
+            # Reset EVERYTHING - NUCLEAR option
+            confirm_reset_everything = st.checkbox(
+                "I understand this will PERMANENTLY DELETE EVERYTHING (transactions, portfolio, tracked stocks, cash history)",
+                help="Check this box to enable the reset everything button"
+            )
+
+            # Reset everything button with confirmation
+            if st.button(
+                "💥 RESET EVERYTHING TO 0",
+                type="secondary",
+                disabled=not confirm_reset_everything,
+                help="Permanently delete ALL data: transactions, portfolio, tracked stocks, and cash history"
+            ):
+                self._reset_everything()
 
     def _render_portfolio_performance(self, initial_fund):
         """Render portfolio performance metrics"""
@@ -504,3 +522,43 @@ class SettingsManager:
         except Exception as e:
             st.error(f"❌ Error resetting transactions: {str(e)}")
             print(f"Reset transactions error: {e}")
+
+    def _reset_everything(self):
+        """Reset EVERYTHING - transactions, portfolio, selected stocks, cash history, and all user data"""
+        try:
+            with st.spinner("Resetting EVERYTHING to 0..."):
+                # Reset transactions and portfolio
+                self.data_manager.reset_user_transactions()
+
+                # Clear ALL session state data
+                st.session_state.transactions = []
+                st.session_state.portfolio_items = {}
+                st.session_state.selected_stocks = []
+                st.session_state.cash_transactions = []
+
+                # Reset cash balance to initial fund (or default)
+                if 'portfolio_settings' in st.session_state:
+                    initial_fund = st.session_state.portfolio_settings.get('initial_fund', 100000.0)
+                    st.session_state.cash_balance = initial_fund
+                else:
+                    st.session_state.cash_balance = 100000.0
+
+                # Reset portfolio settings to defaults
+                st.session_state.portfolio_settings = {
+                    'initial_fund': 100000.0,
+                    'fund_set_date': datetime.now().date(),
+                    'enable_fund_tracking': True
+                }
+
+                # Sync with storage to persist the reset
+                self.session_manager.sync_user_data(self.data_manager)
+
+                st.success("✅ EVERYTHING has been reset to 0!")
+                st.info("All transactions, portfolio, tracked stocks, and cash history have been cleared. Cash balance reset to ৳100,000.")
+
+                # Force page refresh to show clean slate
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Error resetting everything: {str(e)}")
+            print(f"Reset everything error: {e}")
